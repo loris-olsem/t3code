@@ -13,7 +13,7 @@ This is a preparation plan, not the final NitroMap implementation plan.
 The current product is deeply thread-centric.
 
 - Authenticated routes are wrapped in `AppSidebarLayout`, which renders the existing thread sidebar.
-- The primary route is `/_chat/$environmentId/$threadId`.
+- The primary public thread route is `/$environmentId/$threadId`; the current `_chat` route group is pathless.
 - `ChatView` owns the main thread experience, including timeline, composer, plan sidebar, diff controls, branch/worktree controls, terminal drawer, approvals, and provider state.
 - The client store is organized around projects and threads.
 - The server orchestration contracts expose project and thread aggregates only.
@@ -45,7 +45,7 @@ Instead, introduce the NitroMap product structure with mocked domain data:
 - mocked ownership agents
 - mocked responsibility query metadata
 - mocked interventions
-- mocked supervisor change history
+- mocked supervisor action history
 - mocked active work episode summary
 
 The mock layer should be explicit and replaceable. It should live behind a small interface that resembles the future real read model. This prevents UI code from hardcoding fake objects in components and makes the eventual backend integration much cleaner.
@@ -53,6 +53,19 @@ The mock layer should be explicit and replaceable. It should live behind a small
 The first functional target is:
 
 > A user opens a project and sees a NitroMap shell instead of a chat-first thread layout. The shell shows a map-first project surface with mocked ownership data and a compact work panel. Existing conversations can still be launched and backed by current threads, but they are visually demoted.
+
+Call this target the first user-visible cut. It is complete only when all of these are true:
+
+- `/projects/$environmentId/$projectId/map` renders inside a NitroMap shell, not the current thread-sidebar-first shell.
+- The route is reachable from existing authenticated navigation.
+- The route uses deterministic mock data scoped by `environmentId` and `projectId`.
+- The visible project surface contains a map, work summary, supervisor summary, and inspector.
+- `/$environmentId/$threadId` remains usable as the existing compatibility transcript route.
+- New NitroMap surfaces do not expose `threadId` as the user-facing product identity.
+
+This first user-visible cut is complete at the end of Milestone 4. Milestone 3 may add the route and shell stub, but it is not complete until the map, work summary, supervisor summary, and inspector are all present.
+
+At the end of Milestone 4, `Start work` is visible only as a disabled, non-interactive affordance. Real launch/link behavior through the thread-backed work-episode adapter is introduced in Milestone 5.
 
 ## Product Structure To Prepare
 
@@ -77,19 +90,47 @@ Existing concepts should map as follows:
 
 This lets current functionality continue while the product language changes.
 
+Canonical transitional names:
+
+| Concept | UI-local type during preparation | Future contract/schema name | Notes |
+| --- | --- | --- | --- |
+| project view | `NitroMapProjectView` | `NitroMapProjectSnapshot` | UI view may include derived layout and summary data. Contract snapshot should remain schema-only. |
+| map | `NitroMapSnapshot` | `NitroMapSnapshot` | Contains resources, agents, responsibilities, edges, interventions, and supervisor actions. |
+| resource | `NitroResource` | `NitroResource` | Stable domain resource, not a display label or worktree. |
+| visual resource node | `NitroResourceNode` | none | UI layout wrapper around `NitroResource`. |
+| ownership agent | `NitroOwnershipAgent` | `NitroOwnershipAgent` | Covers implementation and management agents. Do not call these threads. |
+| responsibility | `NitroResponsibility` | `NitroResponsibility` | Owns the query describing what resources are meant. |
+| responsibility query | `NitroResponsibilityQuery` | `NitroResponsibilityQuery` | Non-abstract responsibilities must include this. |
+| ownership edge | `NitroOwnershipEdge` | `NitroOwnershipEdge` | Links agent, responsibility, and resource match. |
+| intervention | `NitroIntervention` | `NitroIntervention` | Project/map-scoped signal that may be derived from provider activity later. |
+| supervisor action | `NitroSupervisorAction` | `NitroSupervisorAction` | Use this name consistently; do not create a parallel change type. |
+| supervisor summary | `NitroSupervisorSummary` | none initially | UI-local rollup of supervisor status and recent actions. Future contracts may derive it from `NitroSupervisorAction` records. |
+| work episode | `NitroWorkEpisodeSummary` | `NitroWorkEpisode` | Transitional UI object backed by a thread until real work episodes exist. |
+
 ## UI Shell Changes
 
 The current `AppSidebarLayout` should not remain the main product frame long term. It is thread-sidebar-first.
 
-Introduce a new app shell that can support:
+Introduce a new authenticated app shell for NitroMap routes. During preparation, this should be a route-branch layout rather than a global replacement. Existing settings, pairing, websocket status, command palette hooks, and global shortcuts should stay shared through common providers above both layouts.
 
-- project switcher
-- map route
-- conversations/work episodes route
-- supervisor route or panel
-- agents route or panel
-- activity route
-- settings route
+The NitroMap shell hierarchy should be:
+
+- persistent project switcher
+- primary navigation: map, work, supervisor, agents, activity
+- secondary utilities: settings, provider/environment status, command palette entry points
+- right-side or contextual panels: inspector, work summary, supervisor activity
+
+Navigation contract:
+
+| Surface | Route | Primary content | Active state | Project switch behavior |
+| --- | --- | --- | --- | --- |
+| Map | `/projects/$environmentId/$projectId/map` | ownership map, inspector, compact work summary | active on map route | stay on map for the newly selected project |
+| Work | `/projects/$environmentId/$projectId/work` | active and recent work episodes | active on work list or work detail route | show that project's work list |
+| Work detail | `/projects/$environmentId/$projectId/work/$episodeId` | compact work detail plus transcript action | active under Work | if episode is missing in new project, fall back to that project's work list |
+| Supervisor | `/projects/$environmentId/$projectId/supervisor` | read-only supervisor actions and disabled mock controls | active on supervisor route | show that project's supervisor actions |
+| Agents | `/projects/$environmentId/$projectId/agents` | agent directory and responsibility summaries | active on agents route | show that project's agents |
+| Activity | `/projects/$environmentId/$projectId/activity` | interventions and project activity | active on activity route | show that project's activity |
+| Transcript compatibility | `/$environmentId/$threadId` | existing full thread experience | outside NitroMap primary nav | link back to `/projects/$environmentId/$projectId/work/$episodeId` when a validated owning episode is known, otherwise `/projects/$environmentId/$projectId/map` |
 
 Early implementation can keep the existing sidebar component primitives, but not the existing thread-sidebar information architecture. The user should not experience the product as "pick a thread to continue." They should experience it as "open a project map, then inspect or start work."
 
@@ -103,6 +144,53 @@ The empty state should become project/map oriented:
 
 Avoid threading "No active thread" language through new surfaces.
 
+State behavior should be explicit:
+
+- no selected project: show project picker and keep global navigation available
+- project has no generated mock map yet: offer deterministic mock-map creation or reload from mock data source
+- map data loading: show stable shell and skeleton map placeholders
+- map data unavailable: show retry action and link back to project selection
+- active work unavailable: keep map usable and show an empty work panel
+- offline or reconnecting: keep last known map visible with a connection status indicator
+- permission or missing project: show a project-scoped error and do not fall back to an arbitrary thread
+
+Desktop should use a concrete default layout:
+
+- left rail: project switcher and primary navigation
+- center: map canvas or route-specific primary content
+- right stack: inspector first, supervisor summary below it when present
+- bottom or right-adjacent work strip: compact active/blocking work summary
+
+Tablet and narrow desktop should collapse the right stack into a drawer while keeping the work strip visible. Mobile should use top-level tabs for map/list, work, supervisor, agents, and activity. The spatial map may move behind a tab, but the searchable resource/agent list and blocking work summary must remain one tap away. If multiple drawers could open, blocking work outranks inspector, and inspector outranks supervisor history.
+
+Selection behavior:
+
+- selecting a resource opens the inspector with resource identity, matched responsibilities, and owning agents
+- selecting an agent opens the inspector with agent kind, responsibilities, and visible resource matches
+- selecting a responsibility opens query details and all current resource matches
+- selecting an ownership edge explains why that agent owns that resource for that responsibility
+- selecting an intervention opens the intervention detail and related work episode if present
+- selecting a supervisor action opens before/after ownership context when mocked data provides it
+- selecting a work episode opens the compact work detail, with an action to open the transcript route
+
+Only one primary inspector selection should be active at a time. Work blocking states outrank ordinary selection in the work panel, but should not clear the user's map selection. Selection state should be local to the project route at first and does not need to survive a full page reload.
+
+Selection state should use one explicit shape:
+
+```ts
+type NitroMapSelection =
+  | { kind: "resource"; resourceId: string }
+  | { kind: "agent"; agentId: string }
+  | { kind: "agent-instance"; instanceId: string; agentId: string; responsibilityId: string; resourceId?: string }
+  | { kind: "responsibility"; responsibilityId: string }
+  | { kind: "edge"; edgeId: string }
+  | { kind: "intervention"; interventionId: string }
+  | { kind: "supervisor-action"; actionId: string }
+  | { kind: "work-episode"; episodeId: string };
+```
+
+Pointer click, keyboard focus activation, and search-result activation should all set this same selection object. Edges need a selectable hit target larger than the visible line. Repeated abstract-agent visual instances should select `agent-instance`, not duplicate canonical agents.
+
 ## Route Preparation
 
 Create route concepts that can support NitroMap without breaking existing thread routes.
@@ -111,53 +199,164 @@ Candidate route shape:
 
 - `/projects/$environmentId/$projectId/map`
 - `/projects/$environmentId/$projectId/work`
+- `/projects/$environmentId/$projectId/work/$episodeId`
 - `/projects/$environmentId/$projectId/supervisor`
 - `/projects/$environmentId/$projectId/agents`
-- `/work/$environmentId/$episodeId`
+- `/projects/$environmentId/$projectId/activity`
 
-During preparation, `episodeId` may still be the existing `threadId` or a thin wrapper around it. The route names should not expose that implementation detail once NitroMap becomes primary.
+Work episodes are project-scoped in routes. During preparation, `episodeId` may be derived from the existing `threadId`, but the route must also carry `projectId` so ownership, navigation, and fallback behavior stay unambiguous.
 
-Existing `/_chat/...` routes can remain during the transition. They should become compatibility routes or deep transcript/detail routes.
+A transitional work episode must include:
+
+```ts
+interface NitroWorkEpisodeSummary {
+  episodeId: string;
+  environmentId: string;
+  projectId: string;
+  backingThreadId: string;
+  title: string;
+  status: "idle" | "running" | "blocked" | "failed" | "completed";
+  blockingItems: NitroWorkBlockingItem[];
+  createdAt: string;
+  updatedAt: string;
+  transcriptRoute: string;
+}
+```
+
+Creating or resuming work may still dispatch existing thread creation and `thread.turn.start` commands. That behavior should be hidden behind a work-episode adapter so NitroMap components do not call thread APIs directly.
+
+`backingThreadId` is adapter-only. NitroMap labels, route helpers, and visible identities should use `episodeId`. `transcriptRoute` may contain the backing thread id as an href target, but the UI must not render that id as the product identity.
+
+Startup and compatibility rules:
+
+- first launch should prefer the most recent accessible project map when project data exists
+- if bootstrap returns both `bootstrapProjectId` and `bootstrapThreadId`, route to the project map and expose the thread as the active work episode
+- if only a thread is known, route to `/$environmentId/$threadId`
+- if a project route references a missing project, show a project error rather than opening an unrelated thread
+- `/$environmentId/$threadId` remains the canonical compatibility transcript URL during preparation and should not be removed
+- deep transcript links should point to `/$environmentId/$threadId` until a real work-episode transcript route exists
+
+The current `_chat` route group is pathless; do not introduce a literal `/_chat/...` product URL unless it is only a redirect to the existing transcript URL.
+
+Work flow during preparation:
+
+- `Start work` appears in the compact work panel and on the `/work` route.
+- In Milestones 3-4, `Start work` is visible as a disabled, non-interactive affordance. It must not open a composer, create a mock episode, mutate state, call the adapter, or create/link threads.
+- Milestone 5 is the first milestone where start, resume, or send actions may create/link backing threads and dispatch `thread.turn.start` through the work-episode adapter.
+- A successful Milestone 5 `Start work` action routes to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active, and shows the new work episode detail. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current NitroMap route with a project-scoped error and no unrelated thread opens.
+- `/work` lists active, blocked, and recent episodes for the project.
+- `/work/$episodeId` shows compact work detail, blocking items, changed-resource summaries when available, and an open-transcript action.
+- If no active episode exists, the work panel shows the start-work entry point rather than opening an empty transcript.
 
 ## Mock Domain Layer
 
 Create a small mock NitroMap domain layer before building the UI.
 
-The mock layer should define types close to the intended future read model:
+The mock layer should define a concrete replaceable interface:
 
 ```ts
+interface NitroMapDataSource {
+  getProjectView(ref: NitroProjectRef): Promise<NitroMapProjectViewState>;
+  getWorkEpisodes(ref: NitroProjectRef): Promise<NitroWorkEpisodeSummary[]>;
+  getSupervisorActions(ref: NitroProjectRef): Promise<NitroSupervisorAction[]>;
+}
+
+interface NitroProjectRef {
+  environmentId: string;
+  projectId: string;
+}
+
 interface NitroMapProjectView {
   projectId: string;
   environmentId: string;
   map: NitroMapSnapshot;
-  activeWork: NitroWorkEpisodeSummary | null;
+  layout: NitroMapLayout;
+  workEpisodes: NitroWorkEpisodeSummary[];
+  activeWorkEpisodeId: string | null;
   supervisor: NitroSupervisorSummary;
 }
 
+type NitroMapProjectViewState =
+  | { state: "loading"; ref: NitroProjectRef }
+  | { state: "ready"; view: NitroMapProjectView; version: string }
+  | { state: "stale-ready"; view: NitroMapProjectView; version: string; reason: "offline" | "reconnecting" }
+  | { state: "empty-map"; ref: NitroProjectRef; message: string }
+  | { state: "missing-project"; ref: NitroProjectRef }
+  | { state: "permission-denied"; ref: NitroProjectRef; message: string }
+  | { state: "unavailable"; ref: NitroProjectRef; message: string; retryable: boolean };
+
 interface NitroMapSnapshot {
-  resources: NitroResourceNode[];
-  agents: NitroAgent[];
+  resources: NitroResource[];
+  agents: NitroOwnershipAgent[];
   responsibilities: NitroResponsibility[];
   edges: NitroOwnershipEdge[];
   interventions: NitroIntervention[];
-  supervisorChanges: NitroSupervisorChange[];
+  supervisorActions: NitroSupervisorAction[];
+}
+
+interface NitroMapLayout {
+  resourceNodes: NitroResourceNode[];
+  agentInstances: NitroAgentInstance[];
 }
 ```
 
 This does not need to be the final contract. It should be good enough to shape component boundaries.
 
-Mock data should be deterministic, small, and testable. It should not be generated randomly in render paths.
+Mock data should be deterministic, small, and testable. It should not be generated randomly in render paths. It should be generated from `environmentId + projectId` so multiple projects do not share one global mock map accidentally.
 
 The mock layer should support at least:
 
-- one project with resource nodes
+- one map per project ref with resource nodes
 - several implementation agents
 - several management agents
 - repeated visual instances of abstract agents
 - mocked responsibility queries
-- mocked active work
+- mocked active and recent work episodes
 - mocked interventions
-- mocked supervisor ownership changes
+- mocked supervisor ownership actions
+
+Non-abstract responsibilities must include a query. The query is not executable yet, but it must describe which concrete resources are meant:
+
+```ts
+interface NitroResponsibilityQuery {
+  queryId: string;
+  description: string;
+  definition:
+    | { kind: "path-glob"; glob: string; base: "project-root" }
+    | { kind: "path-set"; paths: string[]; base: "project-root" }
+    | { kind: "resource-kind"; resourceKind: "file" | "folder" | "generated-asset" | "remote-resource" | "logical-component" }
+    | { kind: "remote-resource"; provider: string; remoteIds: string[] }
+    | { kind: "derived"; source: "mock" | "future-indexer"; description: string };
+}
+
+interface NitroAgentInstance {
+  instanceId: string;
+  agentId: string;
+  responsibilityId: string;
+  resourceId?: string;
+  layoutGroupId: string;
+}
+
+interface NitroWorkBlockingItem {
+  blockingItemId: string;
+  kind: "approval" | "user-input" | "failed-turn" | "diff-review" | "terminal-attention";
+  severity: "info" | "needs-action" | "failed";
+  sourceThreadEventId?: string;
+  primaryAction: "respond-inline" | "open-approval" | "open-input" | "retry" | "open-diff" | "open-terminal" | "open-transcript";
+  secondaryAction?: "open-transcript";
+  description: string;
+}
+```
+
+Abstract management responsibilities may omit concrete resource queries only when their scope is intentionally conceptual. If an abstract agent is drawn next to a concrete resource, the edge must identify the responsibility that caused that visual instance.
+
+Mocked supervisor affordances must not look like live controls:
+
+- `Recompute ownership` may be visible but disabled, with copy that says real supervisor recomputation is not implemented in the preparation phase.
+- Supervisor action rows are read-only.
+- Selecting a supervisor action may update the inspector with mocked before/after responsibility or ownership context.
+- Mocked supervisor actions must not show success toasts, mutation progress, or optimistic updates.
+- Ownership changes should be represented as fields inside `NitroSupervisorAction`, not as a separate domain type.
 
 ## Component Structure
 
@@ -184,10 +383,12 @@ Keep component responsibilities narrow:
 - resource nodes render resources
 - agent badges render agent identity and local ownership role
 - work panel summarizes active work
-- supervisor panel shows recompute and ownership changes
+- supervisor panel shows disabled recompute affordance and supervisor actions
 - inspector panel explains selected resources, agents, and responsibilities
 
 Avoid creating another `ChatView`-sized component.
+
+Frontend state should be integrated through a small NitroMap boundary, not ad hoc component imports. During preparation, components should consume a project-scoped view from `NitroMapDataSource`. Later, that boundary can be backed by RPC or route loader data. Store keys and selectors should be scoped by `{ environmentId, projectId }`.
 
 ## Canvas Dependency Decision
 
@@ -213,6 +414,8 @@ When the map becomes more interactive, evaluate:
 - screenshot/test stability
 - bundle cost
 
+Even in the mocked HTML/SVG phase, the map should have a non-spatial inspection path. Search, keyboard focus, readable labels, and a list-style resource/agent view can be minimal, but the user should not be forced to use spatial dragging or precise pointer targeting to inspect ownership.
+
 ## Conversation Demotion
 
 Do not delete thread functionality during preparation.
@@ -226,6 +429,95 @@ Instead:
 - preserve existing approval, pending input, diff, and terminal functionality while gradually moving controls into work-episode panels
 
 The preparation phase should make long chat history non-primary without breaking provider workflows.
+
+Blocking provider workflows must remain first-class:
+
+- pending approval appears as a blocking item in the compact work panel
+- pending user input appears as a blocking item with a clear action to respond
+- failed provider turns appear in the work panel with retry/open-transcript actions
+- diffs and terminal output remain reachable from the work episode detail
+- opening a transcript should not be required just to notice that work is blocked
+
+The NitroMap UI should not duplicate send-turn logic. Work episode actions should call a shared adapter that delegates to the existing thread execution path during preparation.
+
+Preparation-phase work adapter:
+
+```ts
+interface NitroWorkEpisodeAdapter {
+  startWork(input: { environmentId: string; projectId: string; prompt: string; selectedResourceIds?: string[]; selectedResponsibilityIds?: string[] }): Promise<NitroWorkEpisodeSummary>;
+  resumeWork(input: { environmentId: string; projectId: string; episodeId: string }): Promise<NitroWorkEpisodeSummary>;
+  sendTurn(input: { environmentId: string; projectId: string; episodeId: string; prompt: string }): Promise<void>;
+  respondToApproval(input: { environmentId: string; projectId: string; episodeId: string; blockingItemId: string; approved: boolean }): Promise<void>;
+  respondToUserInput(input: { environmentId: string; projectId: string; episodeId: string; blockingItemId: string; response: string }): Promise<void>;
+  retryTurn(input: { environmentId: string; projectId: string; episodeId: string; blockingItemId: string }): Promise<void>;
+  getDiffDetail(input: { environmentId: string; projectId: string; episodeId: string; blockingItemId: string }): Promise<unknown>;
+  getTerminalDetail(input: { environmentId: string; projectId: string; episodeId: string; blockingItemId: string }): Promise<unknown>;
+  openTranscript(input: { environmentId: string; projectId: string; episodeId: string }): string;
+}
+```
+
+During preparation, the authoritative episode-to-thread mapping lives in the work-episode adapter/read boundary. It is keyed by `{ environmentId, projectId, episodeId }` and resolves to `backingThreadId`. Mock mapping may be deterministic and in-memory for Milestone 4, but Milestone 5 must read the mapping from existing thread/project state or a clearly named mock/experimental bridge. Adapter mutations must validate that the episode belongs to the supplied project before dispatching thread commands.
+
+Missing, ambiguous, or unproven episode mappings must fail closed with a project-scoped missing/unavailable episode state. The adapter must never infer a backing thread from route params, the globally active/current thread, recency, display labels, or a matching title.
+
+During preparation, the adapter may wrap existing orchestration RPC/commands and client/server services for thread turn start, approval response, user-input response, thread detail subscription, turn diff access, and terminal access. It must not bypass these boundaries by talking directly to provider managers or app-server internals. Every thread API call must happen after `{ environmentId, projectId, episodeId }` has been resolved to a validated `backingThreadId`.
+
+Work panel action contract:
+
+| Blocking item kind | Priority | Primary action | Secondary action | Transcript required |
+| --- | --- | --- | --- | --- |
+| `approval` | 1 | approve/reject from the work panel or approval drawer | open transcript | no |
+| `user-input` | 2 | respond from the work panel or input drawer | open transcript | no |
+| `failed-turn` | 3 | retry or open failure detail | open transcript | no |
+| `diff-review` | 4 | open diff | open transcript | no |
+| `terminal-attention` | 5 | open terminal drawer/detail | open transcript | no |
+
+When several episodes are blocked, sort by the highest-priority blocking item, then by most recently updated episode.
+
+Blocking item UI destinations:
+
+- Approval opens an approval drawer or inline work-panel section with approve/reject actions. Submitting returns to the same NitroMap route and updates the work episode state.
+- User input opens an input drawer or inline work-panel section with a response composer. Submitting returns to the same NitroMap route and updates the work episode state.
+- Failed turn opens a failure detail drawer with retry and transcript actions. Retry stays in the NitroMap work route unless the user explicitly opens transcript.
+- Diff review opens a NitroMap work-detail diff drawer or panel backed by the existing diff APIs. It may reuse existing diff components, but it must be hosted inside the NitroMap work surface rather than routing through `ChatView`.
+- Terminal attention opens a NitroMap work-detail terminal drawer or panel backed by the existing terminal APIs. It may reuse existing terminal components, but it must be hosted inside the NitroMap work surface rather than routing through `ChatView`.
+- Open transcript is the explicit escape hatch to `/$environmentId/$threadId`; no blocking primary action should require this route.
+
+## Removal And Replacement Boundaries
+
+Preparation should remove the thread-first product shape from NitroMap surfaces, not delete the execution machinery that still makes provider work reliable.
+
+Remove or stop using these for NitroMap routes:
+
+- `AppSidebarLayout` as the wrapper for `/projects/$environmentId/$projectId/...` routes.
+- Thread sidebar information architecture as the primary navigation for project work.
+- "Pick a thread" or "No active thread" language in NitroMap surfaces.
+- Raw `threadId` as visible product identity, labels, headings, breadcrumbs, or route helper names in NitroMap UI.
+- Direct calls from NitroMap components to thread send-turn/start-turn APIs.
+- Mock NitroMap objects embedded inside React components.
+- Chat timeline as the center surface of project work.
+
+Keep these during preparation:
+
+- provider sessions keyed by `threadId`
+- current thread execution path
+- `ChatView` as the compatibility transcript/detail surface
+- `/$environmentId/$threadId` deep links
+- approvals, pending input, diffs, terminal output, and failure handling
+- existing settings, pairing, websocket status, and command palette providers
+
+Replace with these boundaries:
+
+- NitroMap route-branch shell for project routes
+- `NitroMapDataSource` for project map/read data
+- `NitroWorkEpisodeAdapter` for all work actions that still delegate to thread plumbing
+- `NitroMapSelection` for map/list/inspector selection
+- project-scoped work routes instead of thread selection as the normal path
+- transcript links as explicit detail actions, not default navigation
+
+The current root route wraps authenticated surfaces in `AppSidebarLayout`. The implementation must explicitly break that coupling for NitroMap routes. Either move `AppSidebarLayout` down into the legacy transcript/chat route branch, or introduce an authenticated frame that chooses `NitroMapShell` or `AppSidebarLayout` by route branch. Auth, websocket status, command palette, toast, pairing, settings providers, and environment providers should stay above both shells.
+
+An implementation should not remove old thread files just because a NitroMap replacement exists. A thread-oriented file should be removed only when no compatibility transcript path, provider workflow, or legacy route still depends on it. Until then, move usage behind NitroMap adapters or route boundaries.
 
 ## Server And Contracts Preparation
 
@@ -248,6 +540,55 @@ When backend preparation begins, add new contracts and projections rather than o
 Do not encode ownership agents as special threads. That would preserve the wrong architecture.
 
 Provider sessions may remain keyed by `threadId` until a real work-episode aggregate exists. The important preparation step is to stop exposing `threadId` as the product-level identity in new UI.
+
+When contracts are introduced, prefer a NitroMap-specific read boundary rather than overloading existing thread details. Candidate methods:
+
+- `nitromap.getProjectSnapshot`
+- `nitromap.subscribeProject`
+- `nitromap.getWorkEpisode`
+
+These should define sequence/version fields and reconnect behavior. If the existing orchestration replay stream is reused, document exactly how NitroMap project events join the current project/thread aggregate model.
+
+Subscription contract default:
+
+- `nitromap.subscribeProject` should emit one initial snapshot followed by ordered project updates.
+- `sequence` should be the existing global orchestration sequence if NitroMap events share the current event log.
+- `projectVersion` should be project-local and increment for each NitroMap project update.
+- Subscribe input should accept `{ environmentId, projectId, lastSequence?, lastProjectVersion? }`.
+- Each update envelope should include `{ environmentId, projectId, sequence, projectVersion, snapshot? | patch? }`.
+- On a fresh subscription, the server emits a snapshot envelope first.
+- On reconnect with cursors, the server may replay missed project updates when available; if it cannot prove continuity, it must emit a fresh snapshot envelope instead of relying on the client to infer correctness.
+- A filtered project stream should not treat unrelated global events as client-visible gaps. Gap detection is based on project update continuity; global sequence is retained for ordering and diagnostics.
+- If the client receives a discontinuity marker or incompatible version, it should request a fresh `nitromap.getProjectSnapshot` before applying more updates.
+
+Candidate durable event names for later backend work:
+
+- `nitromap.resource-upserted`
+- `nitromap.resource-removed`
+- `nitromap.responsibility-upserted`
+- `nitromap.responsibility-assigned`
+- `nitromap.responsibility-unassigned`
+- `nitromap.supervisor-action-recorded`
+- `nitromap.intervention-recorded`
+- `nitromap.work-episode-linked`
+
+Default aggregate rule for future backend work:
+
+- map ownership events use `aggregateKind: "nitromap-project"` and `aggregateId: environmentId + ":" + projectId` unless `projectId` is later proven globally unique
+- every NitroMap event includes `environmentId` and `projectId`
+- work-episode link events include `environmentId`, `projectId`, `episodeId`, and `backingThreadId`
+- provider execution events may remain on the existing thread aggregate until a durable work-episode aggregate exists
+- NitroMap subscriptions should join project-scoped NitroMap events with thread-derived work summaries through projections, not by storing ownership state on thread aggregates
+
+Backend preparation must distinguish source of truth from projection:
+
+- resources may begin as derived workspace/git/project data
+- responsibilities and assignments should become durable source-of-truth records
+- ownership edges may be projections of responsibility queries over resources
+- interventions may be projections from provider activity, git/diff signals, or explicit supervisor actions
+- work episodes are transitional wrappers around threads until a durable work-episode aggregate exists
+
+Any seeded or fake backend data must be clearly named `mock` or `experimental`, must not be exposed as production behavior by default, and must include a removal or migration path.
 
 ## Quality Conventions To Preserve
 
@@ -275,6 +616,17 @@ New NitroMap code should also add its own conventions:
 - responsibility queries should be visible in data even if not yet executable
 - worktree references are execution context only, not owned resources
 
+Resource identity rules:
+
+- resource ids must be stable and not derived from display labels
+- file and folder resources should use canonical paths relative to the project repository root when possible
+- branch and worktree names are execution context and should not change resource identity by themselves
+- generated assets may be resources when they are meaningful ownership targets, but must be marked as generated
+- remote resources must include provider, remote id, and display URL or lookup metadata
+- logical components may be resources only when their query explains how concrete files/resources are matched
+- renames should be modeled as identity-preserving when the underlying project can prove continuity, otherwise as remove plus add
+- ownership can target files, folders, generated assets, remote resources, or logical components, but not a whole worktree
+
 ## Testing Expectations
 
 The preparation phase should still add tests where they protect seams.
@@ -285,10 +637,148 @@ Good early tests:
 - selectors derive map nodes and repeated agent instances predictably
 - route helpers build NitroMap routes without exposing chat routes
 - work panel summarization hides long transcripts by default
-- supervisor change list renders deterministic rows
+- supervisor action list renders deterministic rows
 - selection logic opens the correct resource, agent, or responsibility detail
 
 Avoid expensive browser tests until the component structure settles, but add browser coverage once the map shell becomes the default project view.
+
+Every implementation milestone must pass the repo gates:
+
+- `bun fmt`
+- `bun lint`
+- `bun typecheck`
+
+Relevant milestone tests must pass via `bun run test`. Never use `bun test`.
+
+Milestones with browser e2e gates must also pass the documented browser command, for example `bun run test:e2e` once that script exists. Do not use `bun test` for browser or unit tests.
+
+Milestone-specific unit and integration tests should include:
+
+- Milestone 2: mock data and selector tests
+- Milestone 3: route helper tests and project-scoped mock loading tests
+- Milestone 4: selection and panel-precedence tests
+- Milestone 5: work episode adapter tests proving send-turn logic is not duplicated
+- Milestone 6: bootstrap/deep-link behavior tests
+- Milestone 7: schema validation tests
+- Milestone 8: migration/projection tests when tables are added
+
+## E2E Regression Strategy
+
+Add browser e2e coverage when the project map route first becomes reachable in Milestone 3, starting with a narrow route/shell smoke test. Expand coverage in Milestone 4 when the full NitroMap shell becomes user-visible. Use the repo's existing browser test convention if one exists at implementation time only if it can cover app-level routing, authenticated shell behavior, server welcome/bootstrap, websocket orchestration streams, and deep links. Otherwise introduce Playwright with a minimal fixture strategy. These tests should be stable, deterministic, and mock-backed until real NitroMap data exists.
+
+The required harness shape is:
+
+- mounted app router with authenticated state
+- mocked or fixture-backed environment/project bootstrap
+- injectable `NitroMapDataSource`
+- mocked orchestration shell/thread streams for route and work-panel states
+- mocked transcript compatibility target for `/$environmentId/$threadId`
+- optional provider/session stubs only after Milestone 5
+
+Milestone 4 e2e must not require a live provider or real server process unless the harness explicitly stubs provider/session behavior.
+
+The e2e suite should protect product-level behavior rather than visual details. It should verify:
+
+- direct navigation to `/projects/$environmentId/$projectId/map` renders the map shell in Milestone 4
+- authenticated startup routes to `/projects/$environmentId/$projectId/map` when project data exists in Milestone 6 and later
+- legacy `/$environmentId/$threadId` deep links still open the transcript/detail surface
+- the map route renders the NitroMap shell, map/list surface, work summary, supervisor summary, and inspector
+- NitroMap project routes render NitroMap shell landmarks and primary nav items
+- NitroMap project routes do not render thread list, thread search, or new-thread controls anywhere in the route shell
+- no NitroMap surface shows `No active thread` or raw `threadId` identity text
+- selecting a resource updates the inspector with ownership and responsibility details
+- selecting an agent or repeated abstract-agent instance resolves to canonical agent plus responsibility context
+- selecting a responsibility shows its query definition and current resource matches
+- selecting an ownership edge, intervention, supervisor action, or work episode updates the inspector or work detail according to `NitroMapSelection`
+- keyboard focus activation and search-result activation use the same selection behavior as pointer selection
+- project switching preserves the current NitroMap surface when possible and does not leak previous project data
+- project switching from Work detail to a project missing that episode falls back to the new project's Work list and clears stale episode details
+- `/projects/$environmentId/$projectId/work` shows active, blocked, and recent work episodes
+- `/projects/$environmentId/$projectId/work/$episodeId` opens work detail and exposes an explicit transcript action
+- blocked approval, pending input, failed turn, diff review, and terminal attention states surface in the work panel without requiring transcript navigation
+- approval and user-input primary actions work from the work panel or drawer and keep the user on NitroMap routes unless transcript is explicitly chosen
+- diff and terminal actions open their NitroMap detail/drawer surfaces without routing through ChatView
+- `Start work` is disabled and non-interactive through Milestone 4; from Milestone 5 onward it uses `NitroWorkEpisodeAdapter` and successful starts route to work detail
+- mobile layout exposes map/list, work, supervisor, agents, and activity without losing blocking work visibility
+- offline or reconnecting state keeps the last known map visible with a status indicator
+- missing project and unavailable map states show project-scoped fallbacks and do not open unrelated threads
+- permission-denied or project-inaccessible states show project-scoped fallbacks and do not open unrelated threads
+- no selected project, no generated mock map, map loading, and active-work-unavailable states show project/map-oriented fallbacks rather than thread-centric or blank states
+
+E2E fixtures should prefer deterministic mock data from `NitroMapDataSource`. Tests must not depend on a live provider run for the mocked shell milestones. Milestone 5 adapter-backed e2e may use a deterministic fake adapter/thread bridge. Real provider-backed e2e coverage should start after Milestone 5, and should cover the adapter boundary rather than re-testing the whole transcript timeline.
+
+Minimum e2e gates by milestone:
+
+- Milestone 3: direct project map route smoke test proving the route is reachable from navigation, uses the NitroMap route branch, and does not render the thread sidebar as the project shell.
+- Milestone 4: direct map route smoke test, route/layout test, primary nav route test for Map/Work/Supervisor/Agents/Activity from each Milestone 4 NitroMap source surface, mocked project-switch preservation test, selection-to-inspector tests for resource, agent, agent-instance, responsibility, edge, intervention, and supervisor-action selections, keyboard/search selection test, map fallback-state tests, disabled Start work test, no-thread-language test, old-shell-exclusion test, mobile navigation smoke test.
+- Milestone 5: work episode detail test, work-episode selection-to-detail test, primary nav route test from Work detail, blocking work visibility test, approval/user-input action test, diff/terminal action test, transcript action test, deterministic fake-adapter start/resume smoke test that lands on `/projects/$environmentId/$projectId/work/$episodeId`, missing/ambiguous episode mapping fails-closed test.
+- Milestone 6: authenticated startup routing test, project switch test, work-detail project-switch fallback test, legacy transcript deep-link test, reconnect/stale-map test.
+- Milestone 8 and later: backend snapshot/replay smoke test once real NitroMap subscriptions exist.
+
+Keep the e2e suite small. Add new browser coverage when a regression would be expensive to notice manually or when a milestone changes route ownership, startup behavior, blocking workflows, or compatibility transcript behavior.
+
+### Navigation E2E Matrix
+
+Navigation tests should cover movement to and from each NitroMap surface, not only direct entry to each route.
+
+| Start | User action | Expected destination | Active state | Context rule |
+| --- | --- | --- | --- | --- |
+| Authenticated landing/project entry | open/select project | `/projects/$environmentId/$projectId/map` | Map active | NitroMap shell renders and no thread-sidebar controls appear |
+| Map | click Work | `/projects/$environmentId/$projectId/work` | Work active | project preserved, selection may be cleared unless represented as work context |
+| Map | click Supervisor | `/projects/$environmentId/$projectId/supervisor` | Supervisor active | project preserved, no thread sidebar |
+| Map | click Agents | `/projects/$environmentId/$projectId/agents` | Agents active | project preserved, agent data from same project |
+| Map | click Activity | `/projects/$environmentId/$projectId/activity` | Activity active | project preserved, interventions from same project |
+| Work | click Map | `/projects/$environmentId/$projectId/map` | Map active | project preserved, no automatic transcript open |
+| Work | open episode | `/projects/$environmentId/$projectId/work/$episodeId` | Work active | episode must belong to current project |
+| Work detail | back to Work | `/projects/$environmentId/$projectId/work` | Work active | episode detail cleared, work list remains project-scoped |
+| Work detail | open transcript | `/$environmentId/$threadId` | outside NitroMap nav | transcript route shows back link to owning project work detail or map when known |
+| Transcript compatibility | use back link | `/projects/$environmentId/$projectId/work/$episodeId` when episode is known, otherwise `/projects/$environmentId/$projectId/map` | Work or Map active | no loss of project identity |
+| Supervisor | select related ownership action target | `/projects/$environmentId/$projectId/map` | Map active | inspector selects related resource, agent, responsibility, or edge |
+| Agents | select agent's map context | `/projects/$environmentId/$projectId/map` | Map active | inspector selects agent or agent-instance context |
+| Activity | select related intervention target | `/projects/$environmentId/$projectId/map` or `/projects/$environmentId/$projectId/work/$episodeId` | Map or Work active | destination follows intervention relation |
+| Any NitroMap route | switch project | same surface for new project when valid | same active route | data changes to new project and old project data is not visible |
+| Work detail | switch to project missing episode | `/projects/$environmentId/$newProjectId/work` | Work active | stale episode details are cleared |
+| Any NitroMap route | browser back/forward | previous/next NitroMap or transcript route | active state matches URL | no stale inspector/work state from a different project |
+| Any NitroMap route | mobile tab change | corresponding mobile route/tab | active tab matches route | blocking work remains visible or one tap away |
+
+Parameterized primary-nav coverage should run the same navigation assertion from each available NitroMap source surface. In Milestone 4, the source surfaces are Map, Work, Supervisor, Agents, and Activity. Work detail becomes a source surface in Milestone 5 when `/projects/$environmentId/$projectId/work/$episodeId` exists. From each source, clicking Map, Work, Supervisor, Agents, and Activity should produce the expected URL, active nav state, NitroMap shell, project-scoped mock data, and cleared route-local detail state when leaving Work detail.
+
+These tests do not need to exhaustively cover every pairwise route transition beyond the parameterized primary-nav case. They should also cover the special transitions that can regress product identity: app/project entry, work detail, transcript compatibility, project switch, browser back/forward, and mobile tabs.
+
+### User Story Acceptance Matrix
+
+Use these stories to decide whether the mocked preparation UI is coherent before real NitroMap intelligence exists.
+
+| Story | Given | When | Then | Minimum milestone |
+| --- | --- | --- | --- | --- |
+| Inspect ownership map | a project has deterministic mock map data | the user opens the project map | the NitroMap shell shows map/list, work summary, supervisor summary, and inspector without thread-sidebar navigation | 4 |
+| Inspect resource ownership | a resource has responsibilities and owning agents | the user selects the resource by pointer, keyboard, or search | the inspector shows resource identity, matched responsibilities, owning agents, and query context | 4 |
+| Inspect abstract agent instance | a management agent appears next to multiple resources | the user selects one visual instance | the inspector explains the canonical agent, responsibility, and resource context for that instance | 4 |
+| Inspect responsibility query | a responsibility has a concrete query | the user selects the responsibility | the inspector shows structured query definition and current resource matches | 4 |
+| Inspect ownership edge | an edge links an agent, responsibility, and resource | the user selects the edge | the inspector explains why that ownership relation exists | 4 |
+| Review supervisor action | supervisor mock actions exist | the user opens Supervisor or selects an action | the action is read-only, disabled recompute is clearly non-live, and before/after ownership context appears when available | 4 |
+| Review agent directory | project agents exist | the user opens Agents | implementation and management agents are visible with responsibility summaries and links back to map context | 4 |
+| Review activity/intervention | interventions exist | the user opens Activity or selects a resource/supervisor/ownership-linked intervention | the related map target is reachable with inspector selection, project identity is preserved, and transcript does not auto-open | 4 |
+| Review work-linked intervention | a work-episode-linked intervention exists | the user selects it from Activity | the project-scoped work detail opens when the episode mapping is validated; otherwise the Work list fallback appears | 5 |
+| Start work placeholder | the shell is at Milestone 4 | the user sees Start work | the affordance is visibly disabled/non-interactive, creates no episode, calls no adapter mutation, and cannot link a backing thread | 4 |
+| Start work for real | the shell is at Milestone 5 or later | the user starts work from the work panel or Work route | the action goes through `NitroWorkEpisodeAdapter`, creates or links a validated backing thread, and stays in NitroMap UI | 5 |
+| Resume work | a project has an active or recent episode | the user opens Work and selects the episode | the project-scoped work detail opens with status, blockers, changed-resource summary when available, and transcript action | 5 |
+| Handle approval blocker | a work episode has an approval blocker | the user opens the primary action | approval can be handled in a NitroMap work panel/drawer and the user remains on NitroMap unless transcript is explicitly opened | 5 |
+| Handle input blocker | a work episode needs user input | the user opens the primary action | input can be answered in a NitroMap work panel/drawer and the episode updates through the adapter | 5 |
+| Inspect diff/terminal blocker | a work episode has diff or terminal attention | the user opens the primary action | a NitroMap-hosted drawer/panel opens using existing diff or terminal APIs without routing through `ChatView` | 5 |
+| Open transcript escape hatch | a work episode has a backing thread | the user chooses open transcript | `/$environmentId/$threadId` opens and provides a back link to project work detail or map when known | 5 |
+| Switch project in mocked shell | the user is on any NitroMap route with mocked project data | the user switches project | the app stays on the equivalent surface when valid, clears invalid selection/episode context, and never shows old project data | 4 |
+| Invalid episode mapping fails closed | an episode id is missing, belongs to another project, or maps ambiguously | the user opens or resumes that episode | the app shows a project-scoped fallback or Work list, clears stale detail state, and never opens or links an unrelated backing thread | 5 |
+| Switch project with backend/bootstrap state | the user is on any NitroMap route after startup behavior exists | the user switches project | bootstrap, permissions, and route fallbacks preserve the same project-scoped safety rules | 6 |
+| Startup prefers map | bootstrap knows a project | the user opens the app | startup lands on the project map and exposes a known thread as active work rather than primary identity | 6 |
+| Legacy transcript deep link | the user opens an existing thread URL | the route loads | the transcript still works, with project back link when the owner is known | 6 |
+| Reconnect or offline | a last known map exists | websocket reconnects or goes offline | the stale map remains visible with connection status and no unrelated thread fallback | 6 |
+| Missing project or unavailable mock map | the project route is missing or mock map data is unavailable | the user opens the project route | a project-scoped fallback appears and the app does not open an unrelated thread | 4 |
+| Permission or inaccessible project | the project is inaccessible after permission/bootstrap data exists | the user opens the project route | a project-scoped fallback appears and the app does not open an unrelated thread | 6 |
+| Mobile navigation | the user is on a narrow viewport | the user moves between tabs/routes | map/list, work, supervisor, agents, activity, and mock work summary are reachable | 4 |
+| Mobile blocking work | the user is on a narrow viewport and a real blocking item exists | the user opens the work surface or blocking summary | blocker visibility and primary actions remain available without transcript navigation | 5 |
+
+If a story is implemented with mocked data, the mock must still use the same UI boundaries and route behavior expected from the later real implementation. A story should not be marked complete if it only works by special-casing a component test fixture in a way the app route cannot use.
 
 ## Milestone Map
 
@@ -311,7 +801,7 @@ Outcome:
 
 - add local NitroMap types
 - add deterministic mock data
-- add selectors for map view, active work, supervisor changes, and inspections
+- add selectors for map view, active work, supervisor actions, and inspections
 - no route or product behavior change yet
 
 Quality bar:
@@ -319,6 +809,8 @@ Quality bar:
 - no large components
 - selector tests included
 - mock data does not live inside React components
+- `NitroMapDataSource` interface exists and is the only way UI code reads mock NitroMap data
+- mock data is scoped by `environmentId + projectId`
 
 ### Milestone 3: Add Map-First Project Route
 
@@ -334,6 +826,8 @@ Quality bar:
 - route helpers are typed
 - empty/loading states are map/project-oriented
 - no `No active thread` language in NitroMap surfaces
+- route renders inside the NitroMap route-branch shell
+- existing `/$environmentId/$threadId` transcript route remains reachable
 
 ### Milestone 4: Build NitroMap Shell With Mocked UI Surfaces
 
@@ -343,6 +837,10 @@ Outcome:
 - compact work panel exists
 - supervisor panel exists
 - agent/resource inspector exists
+- `/projects/$environmentId/$projectId/work` exists as a mocked work list surface
+- `/projects/$environmentId/$projectId/supervisor` exists as a mocked supervisor action surface
+- `/projects/$environmentId/$projectId/agents` exists as a mocked agent directory surface
+- `/projects/$environmentId/$projectId/activity` exists as a mocked intervention/activity surface
 - conversation transcript is not the default center surface
 
 Quality bar:
@@ -351,12 +849,14 @@ Quality bar:
 - panels are separate components
 - selection state is minimal and testable
 - no dependency on real supervisor behavior
+- inspector behavior is defined for resources, agents, responsibilities, edges, interventions, and supervisor actions
+- supervisor controls are read-only mock history or clearly disabled placeholders
 
 ### Milestone 5: Bridge Existing Threads To Work Episodes
 
 Outcome:
 
-- active/current thread can be represented as a mocked or thin work episode
+- a thread proven to belong to the current `{ environmentId, projectId }` can be represented as a mocked or thin work episode
 - existing `thread.turn.start` still drives provider execution
 - compact work panel can show current status from existing thread state
 - full ChatView remains available as transcript/detail fallback
@@ -366,6 +866,10 @@ Quality bar:
 - provider execution remains unchanged
 - thread id is not the user-facing product identity in new UI
 - no duplicated send-turn logic
+- no global current-thread fallback is allowed for work episode mapping
+- `NitroWorkEpisodeSummary` includes `backingThreadId` and `transcriptRoute`
+- work-episode selection-to-detail behavior is defined and tested
+- blocking approval, pending input, failure, diff, and terminal states are reachable from the work episode UI
 
 ### Milestone 6: Replace Default Authenticated Landing Behavior
 
@@ -380,6 +884,8 @@ Quality bar:
 - no broken startup flow
 - remote environments still bootstrap
 - settings and command palette still work
+- when both project and thread bootstrap ids exist, landing prefers project map and exposes the thread as active work
+- deep links to `/$environmentId/$threadId` still open the transcript view
 
 ### Milestone 7: Prepare Backend Contracts
 
@@ -394,6 +900,8 @@ Quality bar:
 - contracts stay schema-only
 - no runtime logic in `packages/contracts`
 - no fake long-term persistence hidden behind production names
+- RPC or subscription boundary is documented before implementation
+- sequence/version and reconnect behavior are specified
 
 ### Milestone 8: Backend Projection Scaffold
 
@@ -409,6 +917,8 @@ Quality bar:
 - event/projection style preserved
 - no ad hoc SQL from route handlers
 - migration tests added if schema is non-trivial
+- source-of-truth records are separated from derived projections
+- experimental or mock persistence is explicitly named and has a removal path
 
 ### Milestone 9: Replace Mocks With Real Sources Incrementally
 
@@ -416,13 +926,15 @@ Outcome:
 
 - resources can be derived from workspace/git/project data
 - responsibilities can be persisted
-- supervisor changes can be recorded
+- supervisor actions can be recorded
 - interventions can be projected from activity/provider/git/diff signals
 
 Quality bar:
 
 - each mock replacement is behind the same interface
 - no UI rewrite required when real data arrives
+- resource identity rules remain stable as real data replaces mocks
+- supervisor actions, interventions, and work episodes keep distinct domain meanings
 
 ## Non-Goals For Preparation
 
