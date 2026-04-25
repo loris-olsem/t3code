@@ -35,6 +35,8 @@ Responsibility queries should be typed rather than free-form prose. Early exampl
 - remote-resource query: repository issues, pull requests, CI jobs, deployments, docs pages, or external service objects
 - event query: terminal commands, provider activity, build failures, approvals, or runtime errors relevant to the responsibility
 
+The first implementation should only make file/path responsibilities executable. The broader query kinds above describe the direction, not the V1 runtime contract.
+
 An agent can also own an abstract project concern, such as:
 
 - build engineering
@@ -115,7 +117,7 @@ type ConcreteResponsibility =
     };
 ```
 
-This is only a candidate shape, not a final contract. The important requirement is that concrete ownership must be computable. A supervisor can still explain a responsibility in natural language, but the system needs a query it can evaluate.
+This is a future expansion sketch, not the first runtime contract. The important requirement is that concrete ownership must be computable. A supervisor can still explain a responsibility in natural language, but the system needs a query it can evaluate.
 
 Queries should also be composable. A build engineer may have an abstract build responsibility plus several concrete responsibilities:
 
@@ -144,6 +146,42 @@ The supervisor is implemented as a skill. Its job is not to perform normal imple
 
 Ownership agents do not experience these changes as external edits to their personality. From an individual ownership agent's point of view, its current role is simply what it is. The supervisor can modify an agent's core behavior and responsibility behind the scenes, and the agent should act according to the latest assigned scope.
 
+The supervisor should not be in the hot path for every normal work review. Its primary responsibility is maintaining the ownership graph and the routing rules that make agent activation predictable. Normal implementation and management agents participate in work rounds; the supervisor wakes for map-maintenance events.
+
+The supervisor should operate as a reconciler skill:
+
+```text
+current ownership map + reconciliation reason + bounded evidence
+  -> supervisor skill
+  -> JSON actions
+  -> runtime validation
+  -> ownership map update
+```
+
+It should return structured map updates, not conversational advice. The application applies those updates only after validating that agent references, file matchers, and supervision edges remain coherent.
+
+Supervisor wake events should be concrete and structured, for example:
+
+- project initialized
+- user requested ownership recomputation
+- new package, directory, or important resource pattern detected
+- changed files matched no implementation owner
+- changed files matched too many owners
+- an implementation agent reported that a change is outside its assigned scope
+- a management agent reported repeated conflict between implementation agents
+- a responsibility query became stale
+- the user corrected an ownership assignment
+
+This keeps the supervisor reliable and auditable. It maintains the organization; it does not become an invisible extra reviewer for every file change.
+
+The supervisor skill's output should be JSON with a summary and a list of actions. Actions should cover real reconciliation operations:
+
+- create, update, and delete agents
+- create, update, and delete file responsibilities
+- create, update, and delete supervision edges
+
+The skill should not be artificially limited to soft deletes. If an agent, responsibility, or supervision edge is wrong, redundant, or no longer exists as a useful role, the supervisor can delete it. The runtime should reject invalid resulting maps rather than asking the user to approve routine cleanup.
+
 ## Ownership Agents
 
 Ownership agents persist as part of the project map. They are not just participants in a single chat thread.
@@ -155,11 +193,187 @@ An ownership agent represents responsibility for a domain. During a user-facing 
 
 This allows a user request to be interpreted from multiple angles. For example, a request that looks like a frontend change may also trigger a build engineer because package scripts changed, a testing owner because coverage should be adjusted, and an architecture owner because the change crosses module boundaries.
 
+In the first implementation, ownership agents should focus on files and directories. Every implementation agent watches concrete resource queries. When a user-facing work round changes matching files, that implementation agent is woken with the batched diff and the relevant request context.
+
+Implementation agents should receive at least:
+
+- the original user request
+- the user-facing agent's latest response or turn summary
+- the relevant changed files and diff hunks
+- the responsibility definitions that caused activation
+- recent relevant interventions or unresolved findings
+
+Implementation agents should not receive the entire project transcript by default. Their job is scoped review, warning, and context for the resources they own.
+
+## Ownership Map Data Model
+
+The ownership map should model agents first. Responsibilities and supervision edges attach behavior to agents.
+
+```ts
+type OwnershipMap = {
+  projectId: string;
+  version: number;
+  updatedAt: string;
+
+  agents: OwnershipAgent[];
+  responsibilities: FileResponsibility[];
+  supervision: SupervisionEdge[];
+};
+```
+
+Agents are persistent project roles:
+
+```ts
+type OwnershipAgent = {
+  id: string;
+
+  /**
+   * Implementation agents wake from file changes.
+   * Management agents wake from responses produced by agents below them,
+   * including implementation agents or other management agents.
+   */
+  type: "implementation" | "management";
+
+  name: string;
+
+  /**
+   * Stable role description used to build the agent prompt.
+   */
+  purpose: string;
+
+  status: "active" | "stale" | "disabled";
+
+  lastActivatedAt: string | null;
+  lastResponseAt: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+File responsibilities are deterministic matchers. In the first implementation, only implementation agents can own them:
+
+```ts
+type FileResponsibility = {
+  id: string;
+
+  /**
+   * Must point to an implementation agent.
+   * Management agents do not directly own files.
+   */
+  agentId: string;
+
+  type: "file-scope";
+  status: "active" | "stale" | "disabled";
+
+  title: string;
+
+  /**
+   * Evaluation root for globs. Runtime evaluates include/exclude relative to this.
+   */
+  root: {
+    kind: "repository" | "workspace" | "project";
+    path: string;
+  };
+
+  /**
+   * Deterministic file matcher.
+   * A changed file wakes this agent if it matches include and does not match exclude.
+   */
+  query: {
+    include: string[];
+    exclude: string[];
+  };
+
+  /**
+   * Human/UI grouping only. Not used for matching.
+   */
+  display: {
+    resourceLabel: string;
+    category: "app" | "package" | "test" | "config" | "docs" | "build" | "generated" | "unknown";
+  };
+
+  /**
+   * Why this responsibility exists.
+   */
+  rationale: string;
+
+  /**
+   * Operational meaning:
+   * - 0.90-1.00: strong assignment; revisit only on contradiction or major structure change
+   * - 0.70-0.89: normal assignment; acceptable but revisable when better evidence appears
+   * - 0.40-0.69: tentative assignment; revisit when related files change again
+   * - below 0.40: weak assignment; use only as temporary coverage for otherwise unowned files
+   *
+   * The runtime should not use confidence to decide whether a file matches.
+   * Matching is only root + query. Confidence is for reconciliation priority,
+   * UI explainability, and deciding what the supervisor should revisit.
+   */
+  confidence: number;
+
+  evidence: Array<{
+    kind: "file" | "directory" | "user-instruction" | "agent-report" | "system-detection";
+    value: string;
+  }>;
+
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+Supervision edges define the management hierarchy. A management agent can supervise implementation agents or other management agents:
+
+```ts
+type SupervisionEdge = {
+  id: string;
+
+  /**
+   * Must point to a management agent.
+   */
+  supervisorAgentId: string;
+
+  /**
+   * Can point to either an implementation agent or another management agent.
+   *
+   * If the child emits a response during a round, this can wake the supervisor
+   * agent in the next supervision layer.
+   */
+  childAgentId: string;
+
+  status: "active" | "stale" | "disabled";
+
+  /**
+   * Why this supervisory relationship exists.
+   */
+  rationale: string;
+
+  /**
+   * Same operational meaning as responsibility confidence:
+   * it tells the reconciler how stable this edge is.
+   *
+   * High confidence: keep unless contradicted.
+   * Medium confidence: normal.
+   * Low confidence: revisit when related agents respond or map is recomputed.
+   *
+   * It does not decide wake behavior. Active edge + child response decides wake behavior.
+   */
+  confidence: number;
+
+  evidence: Array<{
+    kind: "agent-purpose" | "user-instruction" | "agent-report" | "system-detection";
+    value: string;
+  }>;
+
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
 ## Implementation Agents And Management Agents
 
 The model has a hard split between implementation agents and management agents.
 
-Implementation agents are bound to a workspace. A workspace can be a git repository, a worktree, or another concrete execution environment. Implementation agents own query-backed responsibilities evaluated in that workspace and can perform or supervise changes there.
+Implementation agents are bound to a workspace. A workspace can be a git repository, a worktree, or another concrete execution environment. Implementation agents own query-backed responsibilities evaluated in that workspace. During ownership rounds, their first job is scoped review and guidance over changed resources, not direct editing.
 
 Management agents are abstract. They do not own files directly in the same way. Instead, they own a category of concern across any relevant workspace. A management agent may care about many files, many repositories, remote services, policies, or workflows, but its ownership is conceptual rather than workspace-bound.
 
@@ -171,6 +385,325 @@ The distinction is semantic, not merely visual:
 - both can appear in the ownership map
 - only implementation agents own responsibilities over workspace-local implementation scope
 
+Implementation agents wake from concrete resource changes. Management agents wake from responses produced by agents below them. The child can be an implementation agent or another management agent.
+
+This creates a clear hierarchy:
+
+- implementation agent: "a file or directory I own changed"
+- management agent: "an agent under my concern responded"
+- supervisor: "the ownership graph itself may need to change"
+
+Management agents should not depend on file resources directly in the first version. They sit above other agents and synthesize, escalate, or resolve cross-cutting concerns from the responses they supervise. For example, a frontend feature-area manager may wake after the web UI owner responds, and a frontend architecture manager may wake after that feature-area manager responds.
+
+Management agents should receive:
+
+- the original user request
+- the user-facing agent's round summary
+- the child-agent responses that caused activation
+- compact changed-resource summaries when useful
+- their management responsibility definition
+- known conflicts, repeated concerns, or unresolved findings
+
+Their job is synthesis and escalation, not line-by-line file review.
+
+Wake behavior should follow the map data:
+
+```text
+file changed
+  -> match active FileResponsibility
+  -> wake owning implementation agent
+
+agent produced a response
+  -> find active SupervisionEdge where childAgentId is the responding agent
+  -> wake supervisorAgentId
+```
+
+There is no separate "meaningful response" filter for management activation. If an agent decides to respond, its direct supervisors are woken. If an agent was woken but has nothing to contribute, it should produce no response event, and no supervisor wakes from it.
+
+The runtime should process management layers until no new supervisors wake, with cycle detection and a maximum depth.
+
+## Work Rounds
+
+The ownership system should be round-based. A user-facing conversation is not an unstructured stream where every agent can speak at any time. It advances through deterministic work rounds.
+
+A normal round should look like this:
+
+```text
+user message
+  -> user-facing agent acts
+  -> user-facing agent reaches a turn boundary
+  -> changed resources and events are collected
+  -> relevant implementation agents are woken with batched diffs
+  -> implementation responses are collected
+  -> relevant management agents are woken from those responses
+  -> management responses are collected
+  -> a round packet is prepared for the user-facing agent
+  -> the user-facing agent continues, fixes, asks, or finishes
+```
+
+Batching at the user-facing agent's turn boundary is important. It prevents piecemeal activation while files are still being edited and gives implementation agents a coherent diff to review.
+
+The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
+
+The supervisor skill should receive a fixed reconciliation input:
+
+```ts
+type SupervisorInput = {
+  reason:
+    | "unowned-file"
+    | "overlapping-owners"
+    | "implementation-without-manager"
+    | "manager-without-children"
+    | "agent-not-activated"
+    | "responsibility-matches-no-files"
+    | "new-resource-group"
+    | "user-correction"
+    | "recompute-requested";
+
+  projectId: string;
+  currentMap: OwnershipMap;
+
+  evidence: {
+    files?: Array<{
+      path: string;
+      exists: boolean;
+      lastChangedAt?: string;
+      changeCount?: number;
+    }>;
+
+    directories?: Array<{
+      path: string;
+      fileCount?: number;
+    }>;
+
+    agents?: Array<{
+      agentId: string;
+      note: string;
+    }>;
+
+    responsibilities?: Array<{
+      responsibilityId: string;
+      matchedFileCount?: number;
+      note: string;
+    }>;
+
+    userInstruction?: string;
+  };
+};
+```
+
+The supervisor skill should return only JSON matching this shape:
+
+```ts
+type SupervisorOutput = {
+  summary: string;
+  actions: SupervisorAction[];
+};
+
+type SupervisorAction =
+  | {
+      type: "create-agent";
+      agent: Omit<OwnershipAgent, "createdAt" | "updatedAt">;
+    }
+  | {
+      type: "update-agent";
+      agentId: string;
+      patch: Partial<Pick<OwnershipAgent, "name" | "purpose" | "status">>;
+      rationale: string;
+    }
+  | {
+      type: "delete-agent";
+      agentId: string;
+      rationale: string;
+    }
+  | {
+      type: "create-file-responsibility";
+      responsibility: Omit<FileResponsibility, "createdAt" | "updatedAt">;
+    }
+  | {
+      type: "update-file-responsibility";
+      responsibilityId: string;
+      patch: Partial<
+        Pick<
+          FileResponsibility,
+          | "status"
+          | "title"
+          | "root"
+          | "query"
+          | "display"
+          | "rationale"
+          | "confidence"
+          | "evidence"
+        >
+      >;
+      rationale: string;
+    }
+  | {
+      type: "delete-file-responsibility";
+      responsibilityId: string;
+      rationale: string;
+    }
+  | {
+      type: "create-supervision-edge";
+      edge: Omit<SupervisionEdge, "createdAt" | "updatedAt">;
+    }
+  | {
+      type: "update-supervision-edge";
+      edgeId: string;
+      patch: Partial<Pick<SupervisionEdge, "status" | "rationale" | "confidence" | "evidence">>;
+      rationale: string;
+    }
+  | {
+      type: "delete-supervision-edge";
+      edgeId: string;
+      rationale: string;
+    };
+```
+
+The runtime should validate supervisor output before applying it:
+
+- `FileResponsibility.agentId` must point to an implementation agent
+- `SupervisionEdge.supervisorAgentId` must point to a management agent
+- `SupervisionEdge.childAgentId` can point to an implementation or management agent
+- active supervision edges must not form cycles
+- no deleted agent can remain referenced by responsibilities or supervision edges
+- active implementation agents should have at least one active file responsibility
+- active management agents should have at least one active child edge, unless they are newly created in the same action batch
+- `query.include` must not be empty
+- `query.exclude` must exist, even if empty
+- `confidence` must be between `0` and `1`
+- file matching ignores `confidence`
+
+Supervisor output should be applied as a transaction. Actions do not need to be valid one-by-one; the batch must be valid after all actions are applied to an in-memory copy of the current map.
+
+```text
+current map
+  -> apply all proposed actions in memory
+  -> validate the final map
+  -> persist the whole batch if valid
+  -> reject the whole batch if invalid
+```
+
+This allows normal cleanup operations such as deleting an old responsibility, deleting the supervision edge that referenced its agent, and deleting the now-unused agent in one reconciliation batch.
+
+Validation should run in two stages:
+
+- preflight validation: action type is known, referenced ids exist where required, created ids do not already exist, no duplicate creates exist in the same batch, and JSON matches the schema
+- final-state validation: no dangling references remain, no active supervision cycles exist, active file responsibilities point to implementation agents, active supervision edges have management supervisors and existing children, active implementation agents have active responsibilities, active management agents have active child edges unless explicitly allowed as empty top-level managers, file includes are non-empty, excludes exist, and confidence values are between `0` and `1`
+
+Each applied supervisor batch should be recorded for auditability and restart recovery:
+
+```ts
+type SupervisorReconciliationBatch = {
+  batchId: string;
+  projectId: string;
+  reason: SupervisorInput["reason"];
+  inputSummary: string;
+  actions: SupervisorAction[];
+  createdAt: string;
+};
+```
+
+Normal ownership-agent outputs should also be structured. Free-form prose is useful for humans, but routing and follow-up behavior should depend on typed fields.
+
+Implementation-agent and management-agent output should use the same response shape:
+
+```ts
+type OwnershipAgentResponse = {
+  responseId: string;
+  roundId: string;
+  agentId: string;
+
+  /**
+   * Copied from the agent so traces can render and route without another lookup.
+   */
+  agentType: "implementation" | "management";
+
+  /**
+   * Short human-readable answer.
+   */
+  summary: string;
+
+  /**
+   * Structured issues or observations.
+   */
+  findings: Array<{
+    severity: "info" | "warning" | "blocking";
+    title: string;
+    body: string;
+    file?: string;
+    line?: number;
+  }>;
+
+  /**
+   * Concrete things the user-facing agent should consider doing.
+   */
+  recommendations: Array<{
+    title: string;
+    body: string;
+    priority: "low" | "normal" | "high";
+  }>;
+
+  /**
+   * Optional structured facts useful for later management agents.
+   */
+  signals: Array<{
+    key: string;
+    value: string;
+  }>;
+
+  createdAt: string;
+};
+```
+
+Every implementation-agent response starts an ownership trace. Management-agent responses append to that trace as the response moves upward through supervision edges.
+
+```ts
+type OwnershipTrace = {
+  traceId: string;
+  roundId: string;
+
+  rootAgentId: string;
+  rootChangedFiles: string[];
+
+  responses: OwnershipAgentResponse[];
+
+  /**
+   * Whether this trace was injected into the user-facing agent directly or
+   * consolidated first.
+   */
+  injection: { mode: "raw" } | { mode: "consolidated"; consolidationId: string };
+};
+```
+
+A trace is the chain from an implementation response through any management responses above it:
+
+```text
+Web UI Owner
+  -> Frontend Feature Manager
+  -> Frontend Architecture Manager
+```
+
+All traces are eventually injected into the user-facing agent. If a trace is small enough, the raw trace can be inserted directly. If a trace is too large by character count, it should be consolidated by a separate consolidation agent with the user-facing agent's context, then the consolidated trace is injected.
+
+Trace size should use a fixed character limit derived from the active model's context size. The limit should be deterministic for a given model/configuration so trace injection behavior is predictable.
+
+The consolidation agent should not invent new findings. Its job is to compress, group, deduplicate, preserve attribution, and keep blocking findings and recommendations explicit.
+
+If an ownership agent, management chain, or consolidation agent fails during a round, the system should inject a failure trace into the user-facing agent rather than retrying or blocking indefinitely. The failure trace should identify the failed agent or phase and enough context for the user-facing agent to continue honestly. A later version may expose a tool that lets the user-facing agent explicitly retrigger a failed trace.
+
+After implementation and management phases complete, the system should build a round packet for the user-facing agent. The packet should not be a raw transcript dump. It should explain:
+
+- what changed
+- which ownership traces were produced
+- blocking issues
+- advisory notes
+- required next actions
+- which traces were injected raw
+- which traces were consolidated
+
+Large traces may be consolidated, but consolidation should preserve structured severity, ownership attribution, required actions, and unresolved conflicts.
+
 ## Ownership Hierarchy
 
 Ownership can overlap, so the map needs hierarchy.
@@ -180,7 +713,7 @@ For example, a build engineer may be responsible for all build-related concerns 
 - the implementation agent owns the concrete file or folder
 - the build engineer owns the build concern expressed through that file
 
-When scopes overlap, the map should make the relationship explicit. An ownership edge should explain whether one agent delegates to another, supervises another, reviews another, or shares concern with another.
+When scopes overlap, the map should make the relationship explicit through file responsibilities and supervision edges. A management agent can supervise another management agent, so hierarchy can represent layers such as implementation owner -> feature-area manager -> frontend architecture manager.
 
 The product should avoid treating ownership as a flat list of path globs. The important object is a responsibility graph.
 
@@ -199,7 +732,33 @@ The difference is that the user-facing agent operates in the context of the owne
 
 In many cases, the ownership agent should intervene before being asked. If it observes relevant files, diffs, terminal output, provider events, or remote-resource changes, it may decide that the active work episode needs guidance.
 
+In the first implementation, these interventions happen at round boundaries after the user-facing agent has produced changes or activity. Later versions may support mid-turn interruption, but the initial product should keep ownership-agent activation deterministic and batched.
+
 This should feel less like a one-on-one chat and more like working inside a living project organization where the right specialists notice when their domain is touched.
+
+The active work episode should expose the round structure to the user. Users should be able to inspect why an agent woke, what resource or response triggered it, and what it contributed to the next main-agent context packet.
+
+For example, a round could be shown as:
+
+```text
+Round 4
+Main agent changed:
+- apps/web/src/ChatView.tsx
+- packages/contracts/src/orchestration.ts
+
+Implementation reviews:
+- Web UI Owner: warning
+- Contracts Owner: blocking
+
+Management reviews:
+- Frontend Architecture: warning
+- Reliability: info
+
+Next action:
+- Main agent must fix the contract compatibility issue.
+```
+
+This makes the application understandable as a project organization, not a many-agent chat room.
 
 ## Conversation And Reset Semantics
 
@@ -212,6 +771,7 @@ Expected reset behavior:
 - starting a new conversation clears ephemeral work-episode context
 - ownership agents begin the new episode with fresh conversation state
 - agent definitions, scopes, hierarchy, and supervisor-maintained organization persist
+- ownership agents remain memory-light; do not add separate long-term per-agent memory beyond the durable ownership map in the first implementation
 - the user can explicitly request a full ownership-map recompute
 - the system may perform partial recomputation when project structure changes enough to justify it
 
@@ -273,7 +833,7 @@ The map canvas should render resources as legible visual nodes rather than as a 
 - deployments
 - databases and remote services
 
-Agent ownership should be shown adjacent to the resources it applies to. If an abstract management agent owns many resources through a responsibility query, the UI may draw that agent multiple times near the relevant resources. These repeated visual instances should resolve back to one canonical agent profile, so the map stays local and readable without duplicating the underlying agent.
+Implementation-agent ownership should be shown adjacent to the resources it applies to. Management agents should appear through supervision relationships above implementation agents, and may be drawn near the resource groups owned by their descendants. These repeated visual instances should resolve back to one canonical agent profile, so the map stays local and readable without duplicating the underlying agent.
 
 The UI should support at least three inspection paths:
 
@@ -291,7 +851,7 @@ The supervisor needs a separate, explicit surface. This can be a dedicated super
 - explain why an agent owns a resource
 - change responsibility queries
 - split or merge agents
-- accept or reject proposed ownership changes
+- inspect or revert supervisor-applied ownership changes
 - inspect recomputation history
 
 Supervisor actions should be visible as map diffs rather than buried in prose. The user should be able to see agents added, agents removed, responsibilities changed, query matches changed, and hierarchy changes.
@@ -327,33 +887,174 @@ The current architecture already has useful primitives:
 
 The ownership-map system can build on these concepts, but it likely needs new domain objects. Threads are not enough. A thread currently represents the primary user-facing work container. In the ownership model, the durable project-level graph is primary, and a conversation is only one kind of work episode attached to that graph.
 
-Potential future objects:
+The ownership map should be stored per project and survive application restarts. It should be server-owned durable state, not frontend-only state. The frontend can render and inspect the map, but supervisor JSON should be applied and validated on the server before persistence.
+
+Minimum durable storage should support:
+
+- ownership agents
+- file responsibilities
+- supervision edges
+- supervisor reconciliation batches
+- ownership agent responses
+- ownership traces
+- trace consolidations
+
+The map tables can be projected into the `OwnershipMap` read model used by the UI and runtime wake logic. Responses, traces, and consolidations belong to work episodes rather than to the persistent map itself, but they should still be durable enough to survive restarts, support UI inspection, and avoid losing ownership feedback while the user-facing agent is waiting for a round packet.
+
+Expected durable domain objects:
 
 - ownership map
 - ownership agent
-- supervisor action
-- scope claim
-- ownership edge
-- intervention
+- file responsibility
+- supervision edge
+- supervisor reconciliation batch
+- ownership agent response
+- ownership trace
+- trace consolidation
 - work episode
 - agent memory snapshot
 - map recomputation job
 
 The current event-sourced orchestration style is a strong fit for this model because ownership changes, interventions, and work-episode activity all need to be observable, replayable, and projectable into UI state.
 
-## Open Questions
+## Architecture Diagrams
 
-- What is the exact schema for an ownership scope?
-- How should file ownership, conceptual ownership, and remote-resource ownership share one model?
-- How much autonomy should an ownership agent have to interrupt active work?
-- Which interventions are advisory, blocking, or require user confirmation?
-- How are conflicts between ownership agents resolved?
-- How much of the supervisor's work is automatic versus explicitly user-triggered?
-- How should partial recomputation decide which agents to preserve, update, split, or delete?
-- What are the persistence boundaries for agent memory?
-- How should implementation agents map to worktrees when multiple worktrees exist for one project?
-- Should a user-facing work episode always have a lead agent, or can the map route the user directly to a group?
-- What parts of the existing thread model survive as compatibility plumbing?
+Diagrams in this document should use one viewpoint at a time and define what their arrows mean. The goal is not decoration; the goal is to make ownership, wake behavior, traces, and persistence visually inspectable without mixing incompatible relationships.
+
+### Ownership Map Structure
+
+Viewpoint: durable per-project ownership map.
+
+Arrow meaning:
+
+- `supervises`: parent management agent wakes when the child agent responds
+- `owns`: implementation agent wakes when changed files match the file responsibility
+- `matches`: file responsibility evaluates its glob query against project files
+
+```mermaid
+graph TD
+  SupervisorSkill[Supervisor Skill - reconciles ownership map]
+  Map[OwnershipMap - per project, durable]
+
+  MgmtA[Management Agent - Frontend Architecture]
+  MgmtB[Management Agent - Feature Area]
+  ImplA[Implementation Agent - Web UI Owner]
+  ImplB[Implementation Agent - Contracts Owner]
+
+  RespA[FileResponsibility - apps/web/src]
+  RespB[FileResponsibility - packages/contracts/src]
+  FilesA[Project files - apps/web/src]
+  FilesB[Project files - packages/contracts/src]
+
+  SupervisorSkill -- JSON reconciliation actions update --> Map
+  Map -- contains --> MgmtA
+  Map -- contains --> MgmtB
+  Map -- contains --> ImplA
+  Map -- contains --> ImplB
+  Map -- contains --> RespA
+  Map -- contains --> RespB
+
+  MgmtA -- supervises --> MgmtB
+  MgmtB -- supervises --> ImplA
+  MgmtA -- supervises --> ImplB
+
+  ImplA -- owns --> RespA
+  ImplB -- owns --> RespB
+  RespA -- matches --> FilesA
+  RespB -- matches --> FilesB
+```
+
+### Work Round Execution
+
+Viewpoint: one user-facing work round.
+
+Arrow meaning:
+
+- each arrow means "happens after and passes the relevant structured context"
+- this diagram is temporal, not ownership hierarchy
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Main as User-facing Agent
+  participant Runtime as Round Runtime
+  participant Impl as Implementation Agents
+  participant Mgmt as Management Agents
+  participant Consolidator as Consolidation Agent
+
+  User->>Main: User request
+  Main->>Runtime: Turn boundary reached with changes/activity
+  Runtime->>Runtime: Batch changed files and events
+  Runtime->>Impl: Wake matching file owners with user request + relevant diffs
+  Impl-->>Runtime: OwnershipAgentResponse or no response
+  Runtime->>Mgmt: Wake direct supervisors for every agent response
+  Mgmt-->>Runtime: OwnershipAgentResponse or no response
+  Runtime->>Runtime: Build ownership traces
+  Runtime->>Consolidator: Consolidate traces over model-derived char limit
+  Consolidator-->>Runtime: Consolidated trace summaries
+  Runtime->>Main: Inject raw traces, consolidated traces, and failure traces
+```
+
+### Trace Propagation
+
+Viewpoint: a single trace created by one implementation-agent response.
+
+Arrow meaning:
+
+- `response wakes supervisor`: the child agent produced a response, so every active direct supervisor edge wakes
+- `appends response`: the supervisor response becomes the next entry in the same trace
+
+```mermaid
+graph LR
+  Change[Changed files - nitromap selectors]
+  Resp[FileResponsibility - nitromap TypeScript files]
+  Impl[Implementation Agent - NitroMap Web Logic Owner]
+  Mgmt1[Management Agent - Frontend Feature Manager]
+  Mgmt2[Management Agent - Frontend Architecture]
+  Trace[OwnershipTrace - ordered responses]
+  Main[User-facing Agent]
+
+  Change -- matches --> Resp
+  Resp -- wakes owner --> Impl
+  Impl -- response starts trace --> Trace
+  Impl -- response wakes supervisor --> Mgmt1
+  Mgmt1 -- appends response --> Trace
+  Mgmt1 -- response wakes supervisor --> Mgmt2
+  Mgmt2 -- appends response --> Trace
+  Trace -- raw or consolidated injection --> Main
+```
+
+### Supervisor Reconciliation
+
+Viewpoint: ownership-map maintenance.
+
+Arrow meaning:
+
+- each arrow means "passes data to the next reconciliation step"
+- this diagram is about map updates, not normal work-round review
+
+```mermaid
+graph TD
+  Event[Reconciliation event - unowned file, stale query, user correction]
+  Input[SupervisorInput - current map, reason, bounded evidence]
+  Skill[Supervisor Skill - reconciler]
+  Output[SupervisorOutput - JSON actions]
+  Preflight[Preflight validation - schema, ids, duplicate creates]
+  Apply[Apply actions in memory - transaction candidate]
+  Final[Final-state validation - references, cycles, active invariants]
+  Persist[Persist batch - map tables and reconciliation batch]
+  Reject[Reject batch - record validation error]
+
+  Event --> Input
+  Input --> Skill
+  Skill --> Output
+  Output --> Preflight
+  Preflight -- valid --> Apply
+  Preflight -- invalid --> Reject
+  Apply --> Final
+  Final -- valid --> Persist
+  Final -- invalid --> Reject
+```
 
 ## Design Principle
 
