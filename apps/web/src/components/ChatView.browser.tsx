@@ -1281,6 +1281,13 @@ async function waitForSendButton(): Promise<HTMLButtonElement> {
   );
 }
 
+async function waitForNitroSubmitButton(): Promise<HTMLButtonElement> {
+  return waitForElement(
+    () => document.querySelector<HTMLButtonElement>('button[aria-label="Start Nitro episode"]'),
+    "Unable to find Nitro submit button.",
+  );
+}
+
 function findComposerProviderModelPicker(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>('[data-chat-provider-model-picker="true"]');
 }
@@ -2787,6 +2794,39 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
     } finally {
       resolveDispatch({ sequence: fixture.snapshot.snapshotSequence + 1 });
+      await mounted.cleanup();
+    }
+  });
+
+  it("renders Nitro submit as an explicit non-Enter episode action", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-nitro-submit" as MessageId,
+        targetText: "nitro submit target",
+      }),
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Iterate first");
+      await waitForLayout();
+
+      const nitroButton = await waitForNitroSubmitButton();
+      const sendButton = await waitForSendButton();
+      const actions = document.querySelector<HTMLElement>('[data-chat-composer-actions="right"]');
+
+      expect(actions?.contains(nitroButton)).toBe(true);
+      expect(actions?.contains(sendButton)).toBe(true);
+      expect(nitroButton.type).toBe("button");
+      expect(sendButton.type).toBe("submit");
+      expect(nitroButton.disabled).toBe(false);
+      expect(sendButton.disabled).toBe(false);
+
+      const icons = Array.from(nitroButton.querySelectorAll("img"));
+      expect(icons).toHaveLength(2);
+      expect(icons.some((icon) => icon.className.includes("group-hover:opacity-0"))).toBe(true);
+      expect(icons.some((icon) => icon.className.includes("group-hover:opacity-100"))).toBe(true);
+    } finally {
       await mounted.cleanup();
     }
   });

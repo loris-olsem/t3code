@@ -431,10 +431,10 @@ The runtime should process management layers until no new supervising management
 
 The ownership system should be round-based. A user-facing conversation is not an unstructured stream where every agent can speak at any time. It advances through deterministic work rounds.
 
-A normal round should look like this:
+A Nitro round should look like this:
 
 ```text
-user message
+user clicks Nitro submit for a project conversation
   -> user-facing agent acts
   -> user-facing agent reaches a turn boundary
   -> changed resources and events are collected
@@ -448,9 +448,11 @@ user message
 
 Batching at the user-facing agent's turn boundary is important. It prevents piecemeal activation while files are still being edited and gives implementation agents a coherent diff to review.
 
+The project conversation has two submit paths. The regular submit path, including pressing Enter, sends an ordinary message to the user-facing main agent and does not start a Nitro work episode or ownership round by itself. The Nitro submit path is an explicit user action that starts a new episode, or starts the next round in an existing active episode, and then activates ownership-agent trace processing.
+
 The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
 
-After the user sends a message to the main agent for a project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The UI should make those inserted traces inspectable in a compact threaded form, similar to a Slack-style thread of contextual replies, without turning the work round into a many-agent chat room.
+After the user starts a Nitro episode from the project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The UI should make those inserted traces inspectable in a compact threaded form, similar to a Slack-style thread of contextual replies, without turning the work round into a many-agent chat room.
 
 The user must still be able to abort an active conversation or work round. Abort means stopping the current user-facing agent turn and any pending ownership-agent phases that have not yet been injected. Already persisted messages, traces, and map state remain inspectable; aborting a conversation does not mutate the ownership map.
 
@@ -840,7 +842,7 @@ The new first-order surfaces are:
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
-The active work episode can still include a conversational transcript, but it should not dominate the product. Work should be organized as episodes and rounds. A user message to a project conversation starts an episode or starts the next round in an existing episode. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread.
+The active work episode can still include a conversational transcript, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent and do not create episodes. The Nitro submit action starts an episode or starts the next round in an existing episode. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread.
 
 ## UI Concept Direction
 

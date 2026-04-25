@@ -3380,6 +3380,7 @@ export default function ChatView(props: ChatViewProps) {
               shouldAutoScrollRef={isAtEndRef}
               scheduleStickToBottom={scrollToEnd}
               onSend={onSend}
+              onNitroSend={() => void onSend()}
               onInterrupt={onInterrupt}
               onImplementPlanInNewThread={onImplementPlanInNewThread}
               onRespondToApproval={onRespondToApproval}

@@ -81,7 +81,8 @@ Existing concepts should map as follows:
 
 - current project -> NitroMap project
 - current thread -> backing implementation for a work episode
-- current user message to a project conversation -> starts or continues a work episode and begins the next round
+- current regular chat submit, including Enter -> ordinary main-agent conversation message, no work episode by itself
+- current Nitro submit button -> starts or continues a work episode and begins the next round
 - current messages -> detailed transcript for a work episode/round, not primary UI
 - current activities -> raw material for round execution state, blockers, and trace inspection
 - current proposed plans -> possible work-episode artifacts
@@ -107,7 +108,7 @@ Canonical transitional names:
 | map reconciliation action | `NitroMapReconciliationAction`   | `NitroMapReconciliationAction` | Use this name consistently; do not create a parallel change type.                                                                                                               |
 | map maintenance summary   | `NitroMapMaintenanceSummary`     | none initially                 | UI-local rollup of Cartographer status and recent map reconciliation actions. Future contracts may derive it from `NitroMapReconciliationAction` records.                       |
 | work episode              | `NitroWorkEpisodeSummary`        | `NitroWorkEpisode`             | Transitional UI object backed by a thread until real work episodes exist.                                                                                                       |
-| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. A user message starts the first round; trace injection into the main thread marks a round boundary.                                  |
+| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. A Nitro submit starts the first round; trace injection into the main thread marks a round boundary.                                  |
 | round trace               | `NitroRoundTrace`                | `NitroOwnershipTrace`          | Round-scoped execution graph from concrete ownership-agent invocations. It is not a global activity item.                                                                       |
 | agent invocation          | `NitroAgentInvocation`           | `NitroOwnershipAgentResponse`  | Concrete inference/run of an ownership agent during one round. Distinct from the persistent ownership agent definition on the project map.                                      |
 
@@ -1128,6 +1129,8 @@ Outcome:
 
 - a thread proven to belong to the current `{ environmentId, projectId }` can be represented as a mocked or thin work episode
 - existing `thread.turn.start` still drives provider execution
+- regular composer submit remains an ordinary main-agent message and does not create a work episode
+- the Nitro composer submit button is the explicit work-episode entry point
 - compact work panel can show current status from existing thread state
 - full ChatView remains available as transcript/detail fallback
 
@@ -1137,6 +1140,8 @@ Quality bar:
 - thread id is not the user-facing product identity in new UI
 - each work episode has a separate main-agent conversation state even when episodes share the same project ownership map
 - no duplicated send-turn logic
+- Enter and the regular send button do not call the work-episode adapter
+- clicking the Nitro button goes through the work-episode adapter and creates or resumes the episode/round
 - no global current-thread fallback is allowed for work episode mapping
 - `NitroWorkEpisodeSummary` includes `backingThreadId` and `transcriptRoute`
 - work-episode selection-to-detail behavior is defined and tested

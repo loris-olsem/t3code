@@ -288,6 +288,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   hasSendableContent: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
+  onNitroSend: () => void;
   onImplementPlanInNewThread: () => void;
 }) {
   return (
@@ -308,6 +309,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         hasSendableContent={props.hasSendableContent}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
+        onNitroSend={props.onNitroSend}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
       />
     </>
@@ -432,6 +434,7 @@ export interface ChatComposerProps {
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }) => void;
+  onNitroSend: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -515,6 +518,7 @@ export const ChatComposer = memo(
       shouldAutoScrollRef,
       scheduleStickToBottom,
       onSend,
+      onNitroSend,
       onInterrupt,
       onImplementPlanInNewThread,
       onRespondToApproval,
@@ -1973,6 +1977,7 @@ export const ChatComposer = memo(
                     hasSendableContent={composerSendState.hasSendableContent}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
+                    onNitroSend={onNitroSend}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                   />
                 </div>
