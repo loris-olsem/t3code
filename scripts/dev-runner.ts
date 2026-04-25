@@ -15,6 +15,8 @@ const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::1", "::"] as const;
+const SERVER_ENVIRONMENT_DESCRIPTOR_PATH = "/.well-known/t3/environment";
+const DEV_WEB_BACKEND_CHECK_TIMEOUT_MS = 1500;
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".t3"),
@@ -44,6 +46,11 @@ class DevRunnerError extends Data.TaggedError("DevRunnerError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+type FetchLike = (
+  input: string,
+  init?: { readonly signal?: AbortSignal },
+) => Promise<{ readonly ok: boolean; readonly status: number }>;
 
 const optionalStringConfig = (name: string): Config.Config<string | undefined> =>
   Config.string(name).pipe(
@@ -362,6 +369,68 @@ export function resolveModePortOffsets<R = NetService>({
   });
 }
 
+export function verifyDevWebBackendReachable(input: {
+  readonly mode: DevMode;
+  readonly env: NodeJS.ProcessEnv;
+  readonly fetchImpl?: FetchLike;
+  readonly timeoutMs?: number;
+}): Effect.Effect<void, DevRunnerError> {
+  return Effect.gen(function* () {
+    if (input.mode !== "dev:web") {
+      return;
+    }
+
+    const httpUrl = input.env.VITE_HTTP_URL?.trim();
+    if (!httpUrl) {
+      return yield* new DevRunnerError({
+        message: "`dev:web` needs VITE_HTTP_URL so the Vite proxy knows which backend to use.",
+      });
+    }
+
+    const descriptorUrl = yield* Effect.try({
+      try: () => new URL(SERVER_ENVIRONMENT_DESCRIPTOR_PATH, httpUrl).toString(),
+      catch: (cause) =>
+        new DevRunnerError({
+          message: `Invalid VITE_HTTP_URL for dev:web: ${httpUrl}`,
+          cause,
+        }),
+    });
+
+    const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    const timeoutMs = input.timeoutMs ?? DEV_WEB_BACKEND_CHECK_TIMEOUT_MS;
+    const response = yield* Effect.tryPromise({
+      try: async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetchImpl(descriptorUrl, { signal: controller.signal });
+        } finally {
+          clearTimeout(timeout);
+        }
+      },
+      catch: (cause) =>
+        new DevRunnerError({
+          message: [
+            `Cannot reach the T3 backend at ${httpUrl}.`,
+            "`bun dev:web` only starts the Vite frontend, so it needs a backend already running.",
+            "Use `bun dev` to start both processes, or start `bun dev:server` in another terminal before `bun dev:web`.",
+          ].join(" "),
+          cause,
+        }),
+    });
+
+    if (!response.ok) {
+      return yield* new DevRunnerError({
+        message: [
+          `The T3 backend at ${httpUrl} responded with HTTP ${response.status}.`,
+          "`bun dev:web` needs a healthy backend descriptor endpoint.",
+          "Use `bun dev` to start both processes, or restart `bun dev:server`.",
+        ].join(" "),
+      });
+    }
+  });
+}
+
 interface DevRunnerCliInput {
   readonly mode: DevMode;
   readonly t3Home: string | undefined;
@@ -429,6 +498,11 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     if (input.dryRun) {
       return;
     }
+
+    yield* verifyDevWebBackendReachable({
+      mode: input.mode,
+      env,
+    });
 
     const child = yield* ChildProcess.make(
       "turbo",

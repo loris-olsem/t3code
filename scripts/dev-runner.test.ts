@@ -9,6 +9,7 @@ import {
   findFirstAvailableOffset,
   resolveModePortOffsets,
   resolveOffset,
+  verifyDevWebBackendReachable,
 } from "./dev-runner.ts";
 
 it.layer(NodeServices.layer)("dev-runner", (it) => {
@@ -364,6 +365,54 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         });
 
         assert.deepStrictEqual(offsets, { serverOffset: 0, webOffset: 0 });
+      }),
+    );
+  });
+
+  describe("verifyDevWebBackendReachable", () => {
+    it.effect("fails dev:web before Vite starts when the backend is unreachable", () =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          verifyDevWebBackendReachable({
+            mode: "dev:web",
+            env: {
+              VITE_HTTP_URL: "http://localhost:13773",
+            },
+            fetchImpl: async () => {
+              throw new Error("ECONNREFUSED");
+            },
+            timeoutMs: 1,
+          }),
+        );
+
+        assert.ok(error.message.includes("Cannot reach the T3 backend"));
+        assert.ok(error.message.includes("bun dev"));
+        assert.ok(error.message.includes("bun dev:server"));
+      }),
+    );
+
+    it.effect("accepts dev:web when the backend descriptor endpoint responds", () =>
+      verifyDevWebBackendReachable({
+        mode: "dev:web",
+        env: {
+          VITE_HTTP_URL: "http://localhost:13773",
+        },
+        fetchImpl: async (input) => {
+          assert.equal(input, "http://localhost:13773/.well-known/t3/environment");
+          return { ok: true, status: 200 };
+        },
+      }),
+    );
+
+    it.effect("does not probe the backend for combined dev mode", () =>
+      verifyDevWebBackendReachable({
+        mode: "dev",
+        env: {
+          VITE_HTTP_URL: "http://localhost:13773",
+        },
+        fetchImpl: async () => {
+          throw new Error("should not be called");
+        },
       }),
     );
   });
