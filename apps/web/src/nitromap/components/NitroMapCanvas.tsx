@@ -1,5 +1,5 @@
 import { GitBranchIcon, LayersIcon, NetworkIcon } from "lucide-react";
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 
 import { cn } from "~/lib/utils";
 import type { NitroProjectMap, NitroSelectionTarget } from "../types";
@@ -12,6 +12,10 @@ interface NitroMapCanvasProps {
 
 export function NitroMapCanvas(props: NitroMapCanvasProps) {
   const { map, onSelect, selection } = props;
+  const [visibleEdges, setVisibleEdges] = useState({
+    supervision: true,
+    ownership: true,
+  });
   const agentById = useMemo(
     () => new Map(map.agents.map((agent) => [agent.id, agent] as const)),
     [map.agents],
@@ -30,80 +34,90 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
         preserveAspectRatio="none"
         className="pointer-events-none absolute inset-0 size-full"
       >
-        {map.supervisionEdges.map((edge) => {
-          const parent = agentById.get(edge.parentAgentId);
-          const child = agentById.get(edge.childAgentId);
-          if (!parent || !child) return null;
-          const active = selection?.kind === "supervision-edge" && selection.id === edge.id;
-          return (
-            <line
-              key={edge.id}
-              x1={parent.position.x}
-              y1={parent.position.y}
-              x2={child.position.x}
-              y2={child.position.y}
-              className={active ? "stroke-primary" : "stroke-muted-foreground/45"}
-              strokeWidth={active ? 0.55 : 0.28}
-              strokeLinecap="round"
-            />
-          );
-        })}
-        {map.ownershipEdges.map((edge) => {
-          const agent = agentById.get(edge.agentId);
-          const resource = resourceById.get(edge.resourceId);
-          if (!agent || !resource) return null;
-          const active = selection?.kind === "ownership-edge" && selection.id === edge.id;
-          return (
-            <line
-              key={edge.id}
-              x1={agent.position.x}
-              y1={agent.position.y}
-              x2={resource.position.x}
-              y2={resource.position.y}
-              className={active ? "stroke-emerald-500" : "stroke-emerald-500/35"}
-              strokeDasharray="1.4 1.4"
-              strokeWidth={active ? 0.55 : 0.32}
-              strokeLinecap="round"
-            />
-          );
-        })}
+        {visibleEdges.supervision
+          ? map.supervisionEdges.map((edge) => {
+              const parent = agentById.get(edge.parentAgentId);
+              const child = agentById.get(edge.childAgentId);
+              if (!parent || !child) return null;
+              const active = selection?.kind === "supervision-edge" && selection.id === edge.id;
+              return (
+                <line
+                  key={edge.id}
+                  x1={parent.position.x}
+                  y1={parent.position.y}
+                  x2={child.position.x}
+                  y2={child.position.y}
+                  className={active ? "stroke-primary" : "stroke-muted-foreground/45"}
+                  strokeWidth={active ? 0.55 : 0.28}
+                  strokeLinecap="round"
+                />
+              );
+            })
+          : null}
+        {visibleEdges.ownership
+          ? map.ownershipEdges.map((edge) => {
+              const agent = agentById.get(edge.agentId);
+              const resource = resourceById.get(edge.resourceId);
+              if (!agent || !resource) return null;
+              const active = selection?.kind === "ownership-edge" && selection.id === edge.id;
+              return (
+                <line
+                  key={edge.id}
+                  x1={agent.position.x}
+                  y1={agent.position.y}
+                  x2={resource.position.x}
+                  y2={resource.position.y}
+                  className={active ? "stroke-emerald-500" : "stroke-emerald-500/35"}
+                  strokeDasharray="1.4 1.4"
+                  strokeWidth={active ? 0.55 : 0.32}
+                  strokeLinecap="round"
+                />
+              );
+            })
+          : null}
       </svg>
 
       <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
-        {map.supervisionEdges.map((edge) => (
-          <button
-            key={edge.id}
-            type="button"
-            aria-label="Inspect supervision edge"
-            className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground shadow-xs",
-              selection?.kind === "supervision-edge" && selection.id === edge.id
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border bg-background/85 hover:bg-accent",
-            )}
-            onClick={() => onSelect({ kind: "supervision-edge", id: edge.id })}
-          >
-            <GitBranchIcon className="size-3.5" />
-            Supervision
-          </button>
-        ))}
-        {map.ownershipEdges.map((edge) => (
-          <button
-            key={edge.id}
-            type="button"
-            aria-label="Inspect ownership edge"
-            className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground shadow-xs",
-              selection?.kind === "ownership-edge" && selection.id === edge.id
-                ? "border-emerald-500 bg-emerald-500/10 text-foreground"
-                : "border-border bg-background/85 hover:bg-accent",
-            )}
-            onClick={() => onSelect({ kind: "ownership-edge", id: edge.id })}
-          >
-            <NetworkIcon className="size-3.5" />
-            Ownership
-          </button>
-        ))}
+        <button
+          type="button"
+          aria-pressed={visibleEdges.supervision}
+          className={cn(
+            "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs shadow-xs",
+            visibleEdges.supervision
+              ? "border-primary bg-primary/10 text-foreground"
+              : "border-border bg-background/85 text-muted-foreground opacity-70 hover:bg-accent",
+          )}
+          onClick={() =>
+            setVisibleEdges((current) => ({
+              ...current,
+              supervision: !current.supervision,
+            }))
+          }
+        >
+          <GitBranchIcon className="size-3.5" />
+          Supervision
+          <span className="text-[10px] text-muted-foreground">{map.supervisionEdges.length}</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={visibleEdges.ownership}
+          className={cn(
+            "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs shadow-xs",
+            visibleEdges.ownership
+              ? "border-emerald-500 bg-emerald-500/10 text-foreground"
+              : "border-border bg-background/85 text-muted-foreground opacity-70 hover:bg-accent",
+          )}
+          onClick={() =>
+            setVisibleEdges((current) => ({
+              ...current,
+              ownership: !current.ownership,
+            }))
+          }
+        >
+          <NetworkIcon className="size-3.5" />
+          Ownership
+          <span className="text-[10px] text-muted-foreground">{map.ownershipEdges.length}</span>
+        </button>
       </div>
 
       {map.resources.map((resource) => (

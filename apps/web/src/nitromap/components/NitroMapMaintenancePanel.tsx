@@ -11,7 +11,7 @@ export function NitroMapMaintenancePanel(props: {
   const { map, onSelect } = props;
 
   return (
-    <section className="flex h-full min-h-0 flex-col border-l border-border bg-card">
+    <section className="flex h-full min-h-0 flex-col bg-card">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold text-foreground">Map Maintenance</h2>
         <p className="mt-1 text-xs text-muted-foreground">

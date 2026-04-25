@@ -163,25 +163,27 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
           })}
         </nav>
 
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <main className="flex min-h-0 flex-1 flex-col">
-            <NitroMapCanvas map={map} selection={selection} onSelect={setSelection} />
-            {view === "work" ? <NitroWorkPanel map={map} onSelect={setSelection} /> : null}
-            {view === "agents" ? <AgentListPanel map={map} onSelect={setSelection} /> : null}
-            {view === "activity" ? <ActivityPanel map={map} onSelect={setSelection} /> : null}
+        {view === "map-maintenance" ? (
+          <main className="min-h-0 flex-1">
+            <NitroMapMaintenancePanel
+              map={map}
+              selectedActionId={selection?.kind === "reconciliation-action" ? selection.id : null}
+              onSelect={setSelection}
+            />
           </main>
-          {view === "map-maintenance" ? (
-            <div className="w-full md:w-96">
-              <NitroMapMaintenancePanel
-                map={map}
-                selectedActionId={selection?.kind === "reconciliation-action" ? selection.id : null}
-                onSelect={setSelection}
-              />
-            </div>
-          ) : (
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+            <main className="flex min-h-0 flex-1 flex-col">
+              {view === "map" ? (
+                <NitroMapCanvas map={map} selection={selection} onSelect={setSelection} />
+              ) : null}
+              {view === "work" ? <NitroWorkPanel map={map} onSelect={setSelection} /> : null}
+              {view === "agents" ? <AgentListPanel map={map} onSelect={setSelection} /> : null}
+              {view === "activity" ? <ActivityPanel map={map} onSelect={setSelection} /> : null}
+            </main>
             <NitroInspectorPanel inspection={inspection} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </SidebarInset>
   );
@@ -205,20 +207,30 @@ function AgentListPanel(props: {
   onSelect: (selection: NitroSelectionTarget) => void;
 }) {
   return (
-    <section className="grid max-h-48 gap-2 overflow-auto border-t border-border bg-card p-3 md:grid-cols-3">
-      {props.map.agents.map((agent) => (
-        <button
-          key={agent.id}
-          type="button"
-          className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-          onClick={() => props.onSelect({ kind: "agent", id: agent.id })}
-        >
-          <span className="block truncate text-xs font-medium text-foreground">{agent.label}</span>
-          <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-            {agent.kind} / {agent.status}
-          </span>
-        </button>
-      ))}
+    <section className="flex min-h-0 flex-1 flex-col bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Agents</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Project agents using the shared ownership map
+        </p>
+      </div>
+      <div className="grid flex-1 content-start gap-2 overflow-auto p-3 md:grid-cols-3">
+        {props.map.agents.map((agent) => (
+          <button
+            key={agent.id}
+            type="button"
+            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
+            onClick={() => props.onSelect({ kind: "agent", id: agent.id })}
+          >
+            <span className="block truncate text-xs font-medium text-foreground">
+              {agent.label}
+            </span>
+            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
+              {agent.kind} / {agent.status}
+            </span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -228,35 +240,45 @@ function ActivityPanel(props: {
   onSelect: (selection: NitroSelectionTarget) => void;
 }) {
   return (
-    <section className="grid max-h-48 gap-2 overflow-auto border-t border-border bg-card p-3 md:grid-cols-2">
-      {props.map.traces.map((trace) => (
-        <button
-          key={trace.id}
-          type="button"
-          className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-          onClick={() => props.onSelect({ kind: "trace", id: trace.id })}
-        >
-          <span className="block truncate text-xs font-medium text-foreground">{trace.title}</span>
-          <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-            {trace.status}
-          </span>
-        </button>
-      ))}
-      {props.map.interventions.map((intervention) => (
-        <button
-          key={intervention.id}
-          type="button"
-          className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-          onClick={() => props.onSelect({ kind: "intervention", id: intervention.id })}
-        >
-          <span className="block truncate text-xs font-medium text-foreground">
-            {intervention.title}
-          </span>
-          <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-            {intervention.status}
-          </span>
-        </button>
-      ))}
+    <section className="flex min-h-0 flex-1 flex-col bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Activity</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Trace messages and abortable user interventions
+        </p>
+      </div>
+      <div className="grid flex-1 content-start gap-2 overflow-auto p-3 md:grid-cols-2">
+        {props.map.traces.map((trace) => (
+          <button
+            key={trace.id}
+            type="button"
+            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
+            onClick={() => props.onSelect({ kind: "trace", id: trace.id })}
+          >
+            <span className="block truncate text-xs font-medium text-foreground">
+              {trace.title}
+            </span>
+            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
+              {trace.status}
+            </span>
+          </button>
+        ))}
+        {props.map.interventions.map((intervention) => (
+          <button
+            key={intervention.id}
+            type="button"
+            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
+            onClick={() => props.onSelect({ kind: "intervention", id: intervention.id })}
+          >
+            <span className="block truncate text-xs font-medium text-foreground">
+              {intervention.title}
+            </span>
+            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
+              {intervention.status}
+            </span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }

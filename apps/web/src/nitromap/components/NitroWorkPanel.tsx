@@ -10,8 +10,8 @@ export function NitroWorkPanel(props: {
   const { map, onSelect } = props;
 
   return (
-    <section className="border-t border-border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+    <section className="flex min-h-0 flex-1 flex-col bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-foreground">Work</h2>
           <p className="truncate text-xs text-muted-foreground">
@@ -29,7 +29,7 @@ export function NitroWorkPanel(props: {
           </Button>
         </div>
       </div>
-      <div className="grid max-h-44 gap-2 overflow-auto p-3 md:grid-cols-2">
+      <div className="grid flex-1 content-start gap-2 overflow-auto p-3 md:grid-cols-2">
         {map.workEpisodes.map((episode) => (
           <button
             key={episode.id}
