@@ -13,7 +13,11 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
-import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
+import {
+  appendKnownCodexModels,
+  checkCodexProviderStatus,
+  type CodexAppServerProviderSnapshot,
+} from "./CodexProvider.ts";
 import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider.ts";
 import {
   haveProvidersChanged,
@@ -285,6 +289,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           assert.strictEqual(status.auth.label, "OpenAI API Key");
         }),
       );
+
+      it("adds GPT-5.5 when the app-server model list omits it", () => {
+        const models = appendKnownCodexModels([
+          {
+            slug: "gpt-5.4",
+            name: "GPT-5.4",
+            isCustom: false,
+            capabilities: null,
+          },
+        ]);
+
+        const gpt55 = models.find((model) => model.slug === "gpt-5.5");
+        assert.strictEqual(gpt55?.name, "GPT-5.5");
+        assert.strictEqual(gpt55?.isCustom, false);
+        assert.deepStrictEqual(
+          gpt55?.capabilities?.optionDescriptors?.[0],
+          selectDescriptor("reasoningEffort", "Reasoning", [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium", isDefault: true },
+            { id: "high", label: "High" },
+            { id: "xhigh", label: "Extra High" },
+          ]),
+        );
+      });
 
       it.effect("returns unavailable when codex is missing", () =>
         Effect.gen(function* () {

@@ -57,6 +57,30 @@ const REASONING_EFFORT_LABELS: Record<CodexSchema.V2ModelListResponse__Reasoning
   xhigh: "Extra High",
 };
 
+const KNOWN_CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "gpt-5.5",
+    name: "GPT-5.5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { id: "low", label: REASONING_EFFORT_LABELS.low },
+            { id: "medium", label: REASONING_EFFORT_LABELS.medium, isDefault: true },
+            { id: "high", label: REASONING_EFFORT_LABELS.high },
+            { id: "xhigh", label: REASONING_EFFORT_LABELS.xhigh },
+          ],
+        },
+      ],
+    }),
+  },
+];
+
 function codexAccountAuthLabel(account: CodexSchema.V2GetAccountResponse["account"]) {
   if (!account) return undefined;
   if (account.type === "apiKey") return "OpenAI API Key";
@@ -178,6 +202,14 @@ function appendCustomCodexModels(
   return customEntries.length === 0 ? models : [...models, ...customEntries];
 }
 
+export function appendKnownCodexModels(
+  models: ReadonlyArray<ServerProviderModel>,
+): ReadonlyArray<ServerProviderModel> {
+  const seen = new Set(models.map((model) => model.slug));
+  const additions = KNOWN_CODEX_MODELS.filter((model) => !seen.has(model.slug));
+  return additions.length === 0 ? models : [...models, ...additions];
+}
+
 function parseCodexSkillsListResponse(
   response: CodexSchema.V2SkillsListResponse,
   cwd: string,
@@ -284,7 +316,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     return {
       account: accountResponse,
       version,
-      models: appendCustomCodexModels([], input.customModels ?? []),
+      models: appendCustomCodexModels(appendKnownCodexModels([]), input.customModels ?? []),
       skills: [],
     } satisfies CodexAppServerProviderSnapshot;
   }
@@ -302,7 +334,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   return {
     account: accountResponse,
     version,
-    models: appendCustomCodexModels(models, input.customModels ?? []),
+    models: appendCustomCodexModels(appendKnownCodexModels(models), input.customModels ?? []),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
   } satisfies CodexAppServerProviderSnapshot;
 }, Effect.scoped);
