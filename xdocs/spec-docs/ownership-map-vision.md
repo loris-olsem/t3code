@@ -6,7 +6,7 @@ T3 Code currently presents coding-agent work as a chat application: projects con
 
 Projects remain a first-class concept, but the main project surface becomes an ownership map rather than a list of chats. The map shows persistent agents, the scopes they care about, the relationships between those scopes, and the live interventions those agents make while work is happening.
 
-The user can still start a conventional conversation, but a conversation is no longer the organizing center of the product. A conversation is an active work episode inside a project ownership map.
+The user can still start a conventional conversation, but a conversation is no longer the organizing center of the product. A conversation is a main-agent thread inside a project ownership map. The same conversation can launch many Nitro work episodes over time, and all conversations in the project share the same durable ownership map.
 
 ## Core Idea
 
@@ -448,11 +448,13 @@ user clicks Nitro submit for a project conversation
 
 Batching at the user-facing agent's turn boundary is important. It prevents piecemeal activation while files are still being edited and gives implementation agents a coherent diff to review.
 
-The project conversation has two submit paths. The regular submit path, including pressing Enter, sends an ordinary message to the user-facing main agent and does not start a Nitro work episode or ownership round by itself. The Nitro submit path is an explicit user action that starts a new episode, or starts the next round in an existing active episode, and then activates ownership-agent trace processing.
+The project conversation has two submit paths. The regular submit path, including pressing Enter, sends an ordinary message to the user-facing main agent and does not start a Nitro work episode or ownership round by itself. The regular path is available only when no Nitro episode is running for that conversation. While a Nitro episode is running, ordinary submit should be blocked; the user can inspect Work details or abort the running episode instead.
+
+The Nitro submit path is an explicit user action that starts a new episode from the current prompt in the current conversation. That episode starts its first round and activates ownership-agent trace processing.
 
 The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
 
-After the user starts a Nitro episode from the project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The UI should make those inserted traces inspectable in a compact threaded form, similar to a Slack-style thread of contextual replies, without turning the work round into a many-agent chat room.
+After the user starts a Nitro episode from the project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The main conversation should receive only compact final round outputs as real `system` messages. Those messages should include deep links to the episode and round details. The detailed traces, invocation graph, concrete agent state, blockers, and abort status belong in the Work surface, not in the main chat transcript.
 
 The user must still be able to abort an active conversation or work round. Abort means stopping the current user-facing agent turn and any pending ownership-agent phases that have not yet been injected. Already persisted messages, traces, and map state remain inspectable; aborting a conversation does not mutate the ownership map.
 
@@ -731,6 +733,8 @@ After implementation and management phases complete, the system should build a r
 
 Large traces may be consolidated, but consolidation should preserve structured severity, ownership attribution, required actions, and unresolved conflicts.
 
+The prepared round packet is materialized for the user as a compact `system` message in the main conversation. That message is the main transcript anchor for the round result and should link to the episode and round details. It should not inline the full trace graph or turn the main conversation into the place where episode internals are inspected.
+
 ## Ownership Hierarchy
 
 Ownership can overlap, so the map needs hierarchy.
@@ -757,7 +761,7 @@ The difference is that the user-facing agent operates in the context of the owne
 - consider interventions from ownership agents during work
 - explain conflicts or unresolved ownership disagreements to the user when needed
 
-Each project conversation has its own user-facing main agent state. Different conversations in the same project share the same durable ownership map, but they are separate work episodes with separate main-agent conversational state, turn history, and abort lifecycle. Ownership agents are activated from the shared project map, not from a conversation-specific copy of the map.
+Each project conversation has its own user-facing main agent state. Different conversations in the same project share the same durable ownership map, but they are separate main-agent threads. Each conversation can launch many Nitro work episodes over time. Episodes have their own round state, trace state, result messages, and abort lifecycle. Ownership agents are activated from the shared project map, not from a conversation-specific copy of the map.
 
 In many cases, the ownership agent should intervene before being asked. If it observes relevant files, diffs, terminal output, provider events, or remote-resource changes, it may decide that the active work episode needs guidance.
 
@@ -791,17 +795,18 @@ This makes the application understandable as a project organization, not a many-
 
 ## Conversation And Reset Semantics
 
-A new conversation creates fresh per-work-episode conversational state for the ownership agents it activates, but it does not reset the ownership map or mutate state for other active conversations.
+A new conversation creates fresh main-agent conversational state, but it does not reset the ownership map or mutate state for other active conversations or episodes.
 
 The map is project memory. It persists until the user explicitly asks to recompute it from scratch or until the system applies a partial recomputation heuristic.
 
-Conversations in the same project share the same ownership map and agent definitions, but they do not share the same main agent. Each conversation is a separate work episode with its own user-facing main agent state, transcript, pending round state, and abort status.
+Conversations in the same project share the same ownership map and agent definitions, but they do not share the same main agent. Each conversation is a separate main-agent thread. A Nitro episode is a separate work object attached to one conversation, and the same conversation can have many episodes over time.
 
 Expected reset behavior:
 
-- starting a new conversation clears ephemeral work-episode context
+- starting a new conversation creates a clean main-agent thread
 - starting a new conversation creates a separate user-facing main agent state for that conversation
-- ownership agents activated for the new episode receive fresh per-episode conversation state
+- starting a Nitro episode creates fresh per-episode round, trace, and abort state attached to the current conversation
+- ownership agents activated for the new episode receive fresh per-episode context
 - agent definitions, scopes, hierarchy, and Cartographer-maintained organization persist
 - ownership agents remain memory-light; do not add separate long-term per-agent memory beyond the durable ownership map in the first implementation
 - the user can explicitly request a full ownership-map recompute
@@ -842,7 +847,7 @@ The new first-order surfaces are:
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
-The active work episode can still include a conversational transcript, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent and do not create episodes. The Nitro submit action starts an episode or starts the next round in an existing episode. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread.
+The active work episode can link back to the conversation that launched it, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent when no Nitro episode is running, and they do not create episodes. The Nitro submit action starts a new episode from the current conversation prompt. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread as a compact `system` result message.
 
 ## UI Concept Direction
 
@@ -874,7 +879,7 @@ The active work episode should be compact but explicit about rounds. It should s
 
 The Work surface should not be a generic activity stream. Activity that matters to the user should be attached to a work episode, a round, a trace, a concrete invocation, a blocker, or a map reconciliation action. A round trace graph should flow left to right from the first concrete agent invocation through any implementation and management agents it woke. This preserves causality and branching better than a flat line while still being scoped to one round.
 
-Conversation history still exists, but it is not primary navigation. A project can have many conversations, and all conversations share the same ownership map and agent assignment. A conversation is a work episode over the project organization, not an isolated chat room with its own agent universe.
+Conversation history still exists, but it is not primary navigation. A project can have many conversations, and all conversations share the same ownership map and agent assignment. A conversation is a normal main-agent thread that can produce many work episodes over the project organization; it is not an isolated chat room with its own agent universe.
 
 The Cartographer needs a separate, explicit surface. This should be exposed to users as Map Maintenance: a dedicated panel, tab, or chat-like control area attached to the map. Its purpose is map maintenance:
 
@@ -916,7 +921,7 @@ The current architecture already has useful primitives:
 - checkpoint and diff summaries
 - runtime receipts for async completion
 
-The ownership-map system can build on these concepts, but it likely needs new domain objects. Threads are not enough. A thread currently represents the primary user-facing work container. In the ownership model, the durable project-level graph is primary, and a conversation is only one kind of work episode attached to that graph.
+The ownership-map system can build on these concepts, but it likely needs new domain objects. Threads are not enough. A thread currently represents the primary user-facing work container. In the ownership model, the durable project-level graph is primary, conversations are main-agent threads attached to that graph, and work episodes are separate objects launched from those conversations.
 
 The ownership map should be stored per project and survive application restarts. It should be server-owned durable state, not frontend-only state. The frontend can render and inspect the map, but Cartographer JSON should be applied and validated on the server before persistence.
 

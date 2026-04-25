@@ -80,10 +80,10 @@ The prepared app should move toward these top-level concepts:
 Existing concepts should map as follows:
 
 - current project -> NitroMap project
-- current thread -> backing implementation for a work episode
-- current regular chat submit, including Enter -> ordinary main-agent conversation message, no work episode by itself
-- current Nitro submit button -> starts or continues a work episode and begins the next round
-- current messages -> detailed transcript for a work episode/round, not primary UI
+- current thread -> main-agent conversation that can launch one or more Nitro work episodes
+- current regular chat submit, including Enter -> ordinary main-agent conversation message when no episode is running; no work episode by itself
+- current Nitro submit button -> creates a new work episode from the current conversation prompt and begins the first round
+- current messages -> main-agent conversation transcript; includes compact `system` round-output messages with links to episode and round details
 - current activities -> raw material for round execution state, blockers, and trace inspection
 - current proposed plans -> possible work-episode artifacts
 - current checkpoints/diffs -> changed resources and result inspection
@@ -107,8 +107,8 @@ Canonical transitional names:
 | intervention              | `NitroIntervention`              | `NitroIntervention`            | Ownership-agent or work-episode feedback surfaced in the map/work UI. Do not use this as a generic project activity record.                                                     |
 | map reconciliation action | `NitroMapReconciliationAction`   | `NitroMapReconciliationAction` | Use this name consistently; do not create a parallel change type.                                                                                                               |
 | map maintenance summary   | `NitroMapMaintenanceSummary`     | none initially                 | UI-local rollup of Cartographer status and recent map reconciliation actions. Future contracts may derive it from `NitroMapReconciliationAction` records.                       |
-| work episode              | `NitroWorkEpisodeSummary`        | `NitroWorkEpisode`             | Transitional UI object backed by a thread until real work episodes exist.                                                                                                       |
-| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. A Nitro submit starts the first round; trace injection into the main thread marks a round boundary.                                  |
+| work episode              | `NitroWorkEpisodeSummary`        | `NitroWorkEpisode`             | Separate work object attached to a project conversation. Many episodes may share the same conversation thread during preparation.                                               |
+| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. Nitro submit starts the first round; round completion inserts a compact `system` result message into the main conversation.          |
 | round trace               | `NitroRoundTrace`                | `NitroOwnershipTrace`          | Round-scoped execution graph from concrete ownership-agent invocations. It is not a global activity item.                                                                       |
 | agent invocation          | `NitroAgentInvocation`           | `NitroOwnershipAgentResponse`  | Concrete inference/run of an ownership agent during one round. Distinct from the persistent ownership agent definition on the project map.                                      |
 
@@ -217,7 +217,7 @@ Canonical preparation route shape:
 - `/projects/$environmentId/$projectId/work/$episodeId`
 - `/projects/$environmentId/$projectId/map-maintenance`
 
-Work episodes are project-scoped in routes. During preparation, `episodeId` may be derived from the existing `threadId`, but the route must also carry `projectId` so ownership, navigation, and fallback behavior stay unambiguous.
+Work episodes are project-scoped in routes. `episodeId` must remain distinct from `threadId` because the same conversation thread can launch many work episodes. The route must carry `projectId` so ownership, navigation, and fallback behavior stay unambiguous.
 
 Agents and activity are not separate top-level routes in the current plan. Persistent agent definitions belong on the Map and inspector. Runtime activity belongs under Work as episode rounds and round traces.
 
@@ -229,8 +229,19 @@ interface NitroWorkEpisodeSummary {
   environmentId: string;
   projectId: string;
   /**
+   * Main-agent conversation that launched the episode. Many episodes may share
+   * the same conversation thread in the preparation bridge.
+   */
+  conversationThreadId: string;
+  /**
+   * User message or composer submission that created the episode.
+   */
+  startedFromMessageId: string;
+  /**
    * Null through Milestone 4 mock-only episodes. Set only after the adapter has
-   * validated a real episode-to-thread mapping in Milestone 5 or later.
+   * validated the execution thread in Milestone 5 or later. During preparation
+   * this is usually the same physical thread as `conversationThreadId`, but UI
+   * code should treat it as adapter plumbing rather than product identity.
    */
   backingThreadId: string | null;
   title: string;
@@ -263,6 +274,10 @@ interface NitroWorkRoundSummary {
   status: "running" | "waiting" | "blocked" | "failed" | "completed" | "aborting" | "aborted";
   title: string;
   startedByUserMessage: string;
+  /**
+   * Id of the compact system result message inserted into the main conversation.
+   * Detailed episode, round, trace, and invocation state lives under Work.
+   */
   resultMessageId: string | null;
   startedAt: string;
   completedAt: string | null;
@@ -301,7 +316,7 @@ Creating or resuming work may still dispatch existing thread creation and `threa
 Startup and compatibility rules:
 
 - first launch should prefer the most recent accessible project map when project data exists
-- if bootstrap returns both `bootstrapProjectId` and `bootstrapThreadId`, route to the project map and expose the thread as the active work episode
+- if bootstrap returns both `bootstrapProjectId` and `bootstrapThreadId`, route to the project map and expose the thread as a known conversation; show an active work episode only when a validated episode mapping exists
 - if only a thread is known, route to `/$environmentId/$threadId`
 - if a project route references a missing project, show a project error rather than opening an unrelated thread
 - `/$environmentId/$threadId` remains the canonical compatibility transcript URL during preparation and should not be removed
@@ -313,11 +328,13 @@ Work flow during preparation:
 
 - `Start work` appears in the compact work panel and on the `/work` route.
 - In Milestones 3-4, `Start work` is visible as a disabled, non-interactive affordance. It must not open a composer, create a mock episode, mutate state, call the adapter, or create/link threads.
-- Milestone 5 is the first milestone where start, resume, or send actions may create/link backing threads and dispatch `thread.turn.start` through the work-episode adapter.
-- A successful Milestone 5 `Start work` action routes to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active, and shows the new work episode detail. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current NitroMap route with a project-scoped error and no unrelated thread opens.
+- Milestone 5 is the first milestone where Nitro submit may create/link backing execution state and dispatch `thread.turn.start` through the work-episode adapter.
+- In Milestone 5, episode creation comes from the Nitro composer button in the conversation, not from a second independent Work prompt flow. A Work-surface `Start work` affordance should route or focus the user toward the current conversation composer/Nitro path until a separate prompt design is intentionally specified.
+- A successful Milestone 5 Nitro submit routes or deep-links to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active when opened, and shows the new work episode detail. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current route with a project-scoped error and no unrelated thread opens.
 - `/work` lists active, blocked, and recent episodes for the project.
 - `/work/$episodeId` shows compact work detail, blocking items, changed-resource summaries when available, and an open-transcript action only when `transcriptRoute` is non-null.
 - If no active episode exists, the work panel shows the start-work entry point rather than opening an empty transcript.
+- While a Nitro episode is running for a conversation, regular submit and Nitro submit in that conversation should be blocked or disabled. Abort remains available from the conversation/work UI.
 
 ## Mock Domain Layer
 
@@ -622,16 +639,16 @@ Do not delete thread functionality during preparation.
 Instead:
 
 - keep current thread execution plumbing
-- expose current or active thread as a compact work episode
+- expose validated work episodes as compact Work entries and keep their conversation thread as adapter plumbing
 - show only high-value summaries in the NitroMap shell
 - keep full message timeline behind a detail route, drawer, or "open transcript" action
 - preserve existing approval, pending input, diff, and terminal functionality while gradually moving controls into work-episode panels
 
 The preparation phase should make long chat history non-primary without breaking provider workflows.
 
-Each project can have multiple conversations/work episodes. They share the same project ownership map, but each one has its own user-facing main agent state, backing thread during preparation, transcript, and active-turn lifecycle. NitroMap components must not treat the project as having one global current main agent.
+Each project can have multiple conversations. They share the same project ownership map, but each one has its own user-facing main agent state, backing thread during preparation, transcript, and active-turn lifecycle. Each conversation can launch many work episodes over time. NitroMap components must not treat the project as having one global current main agent, and they must not treat a conversation id as the episode id.
 
-After the user sends a message in a work episode, the normal NitroMap flow should not require the user to manually coordinate ownership agents. Ownership traces are injected into the main agent's context automatically when that behavior exists. The UI should present those traces as compact threaded context attached to the work episode, ordered by trace creation and injection status, similar to a Slack-style thread, while keeping the full transcript available as the explicit detail/compatibility view. Trace entries should identify the root ownership agent, response chain, current status, and whether the main agent received raw, consolidated, failure, or no injected context.
+After the user starts an episode with Nitro submit, the normal NitroMap flow should not require the user to manually coordinate ownership agents. Ownership traces are injected into the main agent's context automatically when that behavior exists. Round completion inserts a compact `system` result message into the main conversation with deep links to the episode and round details. The Work UI presents the trace details, ordered by trace creation and injection status, while keeping the main conversation lean. Trace entries should identify the root ownership agent, response chain, current status, and whether the main agent received raw, consolidated, failure, or no injected context.
 
 The user must be able to abort an active work episode turn. Abort should stop the current turn and pending ownership phases for that work episode, keep the user in the project-scoped NitroMap surface, and leave already persisted messages, traces, and the shared ownership map inspectable.
 
@@ -652,6 +669,8 @@ interface NitroWorkEpisodeAdapter {
   startWork(input: {
     environmentId: string;
     projectId: string;
+    conversationThreadId: string;
+    startedFromMessageId: string;
     prompt: string;
     selectedResourceIds?: string[];
     selectedResponsibilityIds?: string[];
@@ -722,9 +741,11 @@ interface NitroTerminalDetailRef {
 }
 ```
 
-During preparation, the authoritative episode-to-thread mapping lives in the work-episode adapter/read boundary. It is keyed by `{ environmentId, projectId, episodeId }` and resolves to `backingThreadId`. Milestones 2-4 mock episodes should use `backingThreadId: null` and `transcriptRoute: null` rather than inventing fake thread identities. Milestone 5 must read the mapping from existing thread/project state or a clearly named mock/experimental bridge for adapter-backed tests. Adapter mutations must validate that the episode belongs to the supplied project before dispatching thread commands.
+`sendTurn` is an adapter-internal episode/round action, not the regular composer submit path. Enter and the regular send button continue to use the existing main-agent message flow, and only when no Nitro episode is running for that conversation.
 
-Missing, ambiguous, or unproven episode mappings must fail closed with a project-scoped missing/unavailable episode state. The adapter must never infer a backing thread from route params, the globally active/current thread, recency, display labels, or a matching title.
+During preparation, the authoritative episode-to-conversation mapping lives in the work-episode adapter/read boundary. It is keyed by `{ environmentId, projectId, episodeId }` and resolves to `conversationThreadId`, `startedFromMessageId`, and validated execution plumbing such as `backingThreadId`. Many episodes may resolve to the same `conversationThreadId`. Milestones 2-4 mock episodes should use `backingThreadId: null` and `transcriptRoute: null` rather than inventing fake thread identities. Milestone 5 must read the mapping from existing thread/project state or a clearly named mock/experimental bridge for adapter-backed tests. Adapter mutations must validate that the episode belongs to the supplied project and conversation before dispatching thread commands.
+
+Missing, ambiguous, or unproven episode mappings must fail closed with a project-scoped missing/unavailable episode state. The adapter must never infer a conversation thread or backing thread from route params, the globally active/current thread, recency, display labels, or a matching title.
 
 During preparation, the adapter may wrap existing orchestration RPC/commands and client/server services for thread turn start, approval response, user-input response, thread detail subscription, turn diff access, and terminal access. It must not bypass these boundaries by talking directly to provider managers or app-server internals. Every thread API call must happen after `{ environmentId, projectId, episodeId }` has been resolved to a validated `backingThreadId`.
 
@@ -861,7 +882,7 @@ Backend preparation must distinguish source of truth from projection:
 - supervision edges should be durable management-hierarchy records when backend ownership behavior begins
 - interventions are ownership-agent or work-episode feedback that should be surfaced in the map/work UI
 - provider activity, git/diff signals, and map reconciliation actions may feed intervention detection later, but they should remain separate records unless they produce ownership-agent/work-episode feedback
-- work episodes are transitional wrappers around threads until a durable work-episode aggregate exists
+- work episodes are transitional records mapped to conversation/execution threads until a durable work-episode aggregate exists
 
 Any seeded or fake backend data must be clearly named `mock` or `experimental`, must not be exposed as production behavior by default, and must include a removal or migration path.
 
@@ -973,7 +994,7 @@ The e2e suite should protect product-level behavior rather than visual details. 
 - blocked approval, pending input, failed turn, diff review, and terminal attention states surface in the work panel without requiring transcript navigation
 - approval and user-input primary actions work from the work panel or drawer and keep the user on NitroMap routes unless transcript is explicitly chosen
 - diff and terminal actions open their NitroMap detail/drawer surfaces without routing through ChatView
-- `Start work` is disabled and non-interactive through Milestone 4; from Milestone 5 onward it uses `NitroWorkEpisodeAdapter` and successful starts route to work detail
+- `Start work` is disabled and non-interactive through Milestone 4; from Milestone 5 onward Nitro submit uses `NitroWorkEpisodeAdapter` and successful episode starts link to work detail
 - mobile layout exposes map/list, work, and Map Maintenance without losing blocking work visibility
 - offline or reconnecting state keeps the last known map visible with a status indicator
 - missing project and unavailable map states show project-scoped fallbacks and do not open unrelated threads
@@ -986,7 +1007,7 @@ Minimum e2e gates by milestone:
 
 - Milestone 3: direct project map route smoke test proving the route is reachable from navigation, uses the NitroMap route branch, and does not render the thread sidebar as the project shell.
 - Milestone 4: direct map route smoke test, route/layout test, primary nav route test for Map/Work/Map Maintenance from each Milestone 4 NitroMap source surface, mocked project-switch preservation test, selection-to-inspector tests for resource, agent, agent-instance, responsibility, edge, intervention, and map-reconciliation-action selections, keyboard/search selection test, round-list and round-graph mock tests, map fallback-state tests, disabled Start work test, no-thread-language test, old-shell-exclusion test, mobile navigation smoke test.
-- Milestone 5: work episode detail test, work-episode selection-to-detail test, round deep-link test, result-message back-link test, primary nav route test from Work detail, blocking work visibility test, approval/user-input action test, diff/terminal action test, transcript action test, deterministic fake-adapter start/resume smoke test that lands on `/projects/$environmentId/$projectId/work/$episodeId`, missing/ambiguous episode mapping fails-closed test.
+- Milestone 5: work episode detail test, work-episode selection-to-detail test, round deep-link test, result-message back-link test, primary nav route test from Work detail, regular-submit-does-not-create-episode test, running-episode-blocks-regular-submit test, blocking work visibility test, approval/user-input action test, diff/terminal action test, transcript action test, deterministic fake-adapter Nitro-submit/resume smoke test that lands on `/projects/$environmentId/$projectId/work/$episodeId`, missing/ambiguous episode mapping fails-closed test.
 - Milestone 6: authenticated startup routing test, project switch test, work-detail project-switch fallback test, legacy transcript deep-link test, reconnect/stale-map test.
 - Milestone 8 and later: backend snapshot/replay smoke test once real NitroMap subscriptions exist.
 
@@ -1021,34 +1042,37 @@ These tests do not need to exhaustively cover every pairwise route transition be
 
 Use these stories to decide whether the mocked preparation UI is coherent before real NitroMap intelligence exists.
 
-| Story                                       | Given                                                                     | When                                                          | Then                                                                                                                                  | Minimum milestone |
-| ------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| Inspect ownership map                       | a project has deterministic mock map data                                 | the user opens the project map                                | the NitroMap shell shows map/list, work summary, map maintenance summary, and inspector without thread-sidebar navigation             | 4                 |
-| Inspect resource ownership                  | a resource has responsibilities and owning agents                         | the user selects the resource by pointer, keyboard, or search | the inspector shows resource identity, matched responsibilities, owning agents, and query context                                     | 4                 |
-| Inspect abstract agent instance             | a management agent appears next to multiple resources                     | the user selects one visual instance                          | the inspector explains the canonical agent, responsibility, and resource context for that instance                                    | 4                 |
-| Inspect responsibility query                | a responsibility has a concrete query                                     | the user selects the responsibility                           | the inspector shows structured query definition and current resource matches                                                          | 4                 |
-| Inspect ownership edge                      | an edge links an agent, responsibility, and resource                      | the user selects the edge                                     | the inspector explains why that ownership relation exists                                                                             | 4                 |
-| Review map reconciliation action            | mocked map reconciliation actions exist                                   | the user opens Map Maintenance or selects an action           | the action is read-only, disabled recompute is clearly non-live, and before/after ownership context appears when available            | 4                 |
-| Review work rounds                          | a project has deterministic mock episode data                             | the user opens Work                                           | episodes show their rounds, and the selected round renders concrete agent invocations as a left-to-right execution graph              | 4                 |
-| Inspect round trace                         | a round has ownership traces                                              | the user selects a trace or invocation                        | the detail panel shows the concrete agent state, trigger, status, and whether the trace was injected into the main thread             | 4                 |
-| Review work-linked intervention             | a work-episode-linked intervention exists                                 | the user selects it from Work                                 | the project-scoped work detail opens when the episode mapping is validated; otherwise the Work list fallback appears                  | 5                 |
-| Start work placeholder                      | the shell is at Milestone 4                                               | the user sees Start work                                      | the affordance is visibly disabled/non-interactive, creates no episode, calls no adapter mutation, and cannot link a backing thread   | 4                 |
-| Start work for real                         | the shell is at Milestone 5 or later                                      | the user starts work from the work panel or Work route        | the action goes through `NitroWorkEpisodeAdapter`, creates or links a validated backing thread, and stays in NitroMap UI              | 5                 |
-| Resume work                                 | a project has an active or recent episode                                 | the user opens Work and selects the episode                   | the project-scoped work detail opens with status, blockers, changed-resource summary when available, and transcript action            | 5                 |
-| Handle approval blocker                     | a work episode has an approval blocker                                    | the user opens the primary action                             | approval can be handled in a NitroMap work panel/drawer and the user remains on NitroMap unless transcript is explicitly opened       | 5                 |
-| Handle input blocker                        | a work episode needs user input                                           | the user opens the primary action                             | input can be answered in a NitroMap work panel/drawer and the episode updates through the adapter                                     | 5                 |
-| Inspect diff/terminal blocker               | a work episode has diff or terminal attention                             | the user opens the primary action                             | a NitroMap-hosted drawer/panel opens using existing diff or terminal APIs without routing through `ChatView`                          | 5                 |
-| Open transcript escape hatch                | a work episode has a backing thread                                       | the user chooses open transcript                              | `/$environmentId/$threadId` opens and provides a back link to project work detail or map when known                                   | 5                 |
-| Switch project in mocked shell              | the user is on any NitroMap route with mocked project data                | the user switches project                                     | the app stays on the equivalent surface when valid, clears invalid selection/episode context, and never shows old project data        | 4                 |
-| Invalid episode mapping fails closed        | an episode id is missing, belongs to another project, or maps ambiguously | the user opens or resumes that episode                        | the app shows a project-scoped fallback or Work list, clears stale detail state, and never opens or links an unrelated backing thread | 5                 |
-| Switch project with backend/bootstrap state | the user is on any NitroMap route after startup behavior exists           | the user switches project                                     | bootstrap, permissions, and route fallbacks preserve the same project-scoped safety rules                                             | 6                 |
-| Startup prefers map                         | bootstrap knows a project                                                 | the user opens the app                                        | startup lands on the project map and exposes a known thread as active work rather than primary identity                               | 6                 |
-| Legacy transcript deep link                 | the user opens an existing thread URL                                     | the route loads                                               | the transcript still works, with project back link when the owner is known                                                            | 6                 |
-| Reconnect or offline                        | a last known map exists                                                   | websocket reconnects or goes offline                          | the stale map remains visible with connection status and no unrelated thread fallback                                                 | 6                 |
-| Missing project or unavailable mock map     | the project route is missing or mock map data is unavailable              | the user opens the project route                              | a project-scoped fallback appears and the app does not open an unrelated thread                                                       | 4                 |
-| Permission or inaccessible project          | the project is inaccessible after permission/bootstrap data exists        | the user opens the project route                              | a project-scoped fallback appears and the app does not open an unrelated thread                                                       | 6                 |
-| Mobile navigation                           | the user is on a narrow viewport                                          | the user moves between tabs/routes                            | map/list, work, Map Maintenance, and mock work summary are reachable                                                                  | 4                 |
-| Mobile blocking work                        | the user is on a narrow viewport and a real blocking item exists          | the user opens the work surface or blocking summary           | blocker visibility and primary actions remain available without transcript navigation                                                 | 5                 |
+| Story                                       | Given                                                                     | When                                                          | Then                                                                                                                                             | Minimum milestone |
+| ------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| Inspect ownership map                       | a project has deterministic mock map data                                 | the user opens the project map                                | the NitroMap shell shows map/list, work summary, map maintenance summary, and inspector without thread-sidebar navigation                        | 4                 |
+| Inspect resource ownership                  | a resource has responsibilities and owning agents                         | the user selects the resource by pointer, keyboard, or search | the inspector shows resource identity, matched responsibilities, owning agents, and query context                                                | 4                 |
+| Inspect abstract agent instance             | a management agent appears next to multiple resources                     | the user selects one visual instance                          | the inspector explains the canonical agent, responsibility, and resource context for that instance                                               | 4                 |
+| Inspect responsibility query                | a responsibility has a concrete query                                     | the user selects the responsibility                           | the inspector shows structured query definition and current resource matches                                                                     | 4                 |
+| Inspect ownership edge                      | an edge links an agent, responsibility, and resource                      | the user selects the edge                                     | the inspector explains why that ownership relation exists                                                                                        | 4                 |
+| Review map reconciliation action            | mocked map reconciliation actions exist                                   | the user opens Map Maintenance or selects an action           | the action is read-only, disabled recompute is clearly non-live, and before/after ownership context appears when available                       | 4                 |
+| Review work rounds                          | a project has deterministic mock episode data                             | the user opens Work                                           | episodes show their rounds, and the selected round renders concrete agent invocations as a left-to-right execution graph                         | 4                 |
+| Inspect round trace                         | a round has ownership traces                                              | the user selects a trace or invocation                        | the detail panel shows the concrete agent state, trigger, status, and whether the trace was injected into the main thread                        | 4                 |
+| Review work-linked intervention             | a work-episode-linked intervention exists                                 | the user selects it from Work                                 | the project-scoped work detail opens when the episode mapping is validated; otherwise the Work list fallback appears                             | 5                 |
+| Start work placeholder                      | the shell is at Milestone 4                                               | the user sees Start work                                      | the affordance is visibly disabled/non-interactive, creates no episode, calls no adapter mutation, and cannot link a backing thread              | 4                 |
+| Start episode with Nitro                    | the shell is at Milestone 5 or later and no episode is running            | the user clicks Nitro submit from a conversation composer     | the action goes through `NitroWorkEpisodeAdapter`, creates a new episode for that conversation, starts the first round, and links to Work detail | 5                 |
+| Regular submit stays ordinary               | no episode is running for the conversation                                | the user presses Enter or clicks the regular send button      | the existing main-agent chat flow runs and no work episode is created                                                                            | 5                 |
+| Running episode blocks ordinary submit      | a Nitro episode is running for the conversation                           | the user tries to send ordinary chat input                    | regular submit is disabled or blocked, and the user can inspect Work details or abort                                                            | 5                 |
+| Round result appears in chat                | a Nitro round finishes                                                    | the round output is ready                                     | a real `system` message appears in the main conversation with links to the episode and round details                                             | 5                 |
+| Resume work                                 | a project has an active or recent episode                                 | the user opens Work and selects the episode                   | the project-scoped work detail opens with status, blockers, changed-resource summary when available, and transcript action                       | 5                 |
+| Handle approval blocker                     | a work episode has an approval blocker                                    | the user opens the primary action                             | approval can be handled in a NitroMap work panel/drawer and the user remains on NitroMap unless transcript is explicitly opened                  | 5                 |
+| Handle input blocker                        | a work episode needs user input                                           | the user opens the primary action                             | input can be answered in a NitroMap work panel/drawer and the episode updates through the adapter                                                | 5                 |
+| Inspect diff/terminal blocker               | a work episode has diff or terminal attention                             | the user opens the primary action                             | a NitroMap-hosted drawer/panel opens using existing diff or terminal APIs without routing through `ChatView`                                     | 5                 |
+| Open transcript escape hatch                | a work episode has a backing thread                                       | the user chooses open transcript                              | `/$environmentId/$threadId` opens and provides a back link to project work detail or map when known                                              | 5                 |
+| Switch project in mocked shell              | the user is on any NitroMap route with mocked project data                | the user switches project                                     | the app stays on the equivalent surface when valid, clears invalid selection/episode context, and never shows old project data                   | 4                 |
+| Invalid episode mapping fails closed        | an episode id is missing, belongs to another project, or maps ambiguously | the user opens or resumes that episode                        | the app shows a project-scoped fallback or Work list, clears stale detail state, and never opens or links an unrelated backing thread            | 5                 |
+| Switch project with backend/bootstrap state | the user is on any NitroMap route after startup behavior exists           | the user switches project                                     | bootstrap, permissions, and route fallbacks preserve the same project-scoped safety rules                                                        | 6                 |
+| Startup prefers map                         | bootstrap knows a project                                                 | the user opens the app                                        | startup lands on the project map, treats a known thread as a conversation, and shows active work only when an episode mapping exists             | 6                 |
+| Legacy transcript deep link                 | the user opens an existing thread URL                                     | the route loads                                               | the transcript still works, with project back link when the owner is known                                                                       | 6                 |
+| Reconnect or offline                        | a last known map exists                                                   | websocket reconnects or goes offline                          | the stale map remains visible with connection status and no unrelated thread fallback                                                            | 6                 |
+| Missing project or unavailable mock map     | the project route is missing or mock map data is unavailable              | the user opens the project route                              | a project-scoped fallback appears and the app does not open an unrelated thread                                                                  | 4                 |
+| Permission or inaccessible project          | the project is inaccessible after permission/bootstrap data exists        | the user opens the project route                              | a project-scoped fallback appears and the app does not open an unrelated thread                                                                  | 6                 |
+| Mobile navigation                           | the user is on a narrow viewport                                          | the user moves between tabs/routes                            | map/list, work, Map Maintenance, and mock work summary are reachable                                                                             | 4                 |
+| Mobile blocking work                        | the user is on a narrow viewport and a real blocking item exists          | the user opens the work surface or blocking summary           | blocker visibility and primary actions remain available without transcript navigation                                                            | 5                 |
 
 If a story is implemented with mocked data, the mock must still use the same UI boundaries and route behavior expected from the later real implementation. A story should not be marked complete if it only works by special-casing a component test fixture in a way the app route cannot use.
 
@@ -1127,23 +1151,30 @@ Quality bar:
 
 Outcome:
 
-- a thread proven to belong to the current `{ environmentId, projectId }` can be represented as a mocked or thin work episode
+- Nitro submit can create a work episode attached to the current project conversation
+- one conversation can create many episodes over time
+- each episode has a distinct `episodeId` even when it shares the same conversation thread as earlier episodes
 - existing `thread.turn.start` still drives provider execution
-- regular composer submit remains an ordinary main-agent message and does not create a work episode
-- the Nitro composer submit button is the explicit work-episode entry point
-- compact work panel can show current status from existing thread state
+- regular composer submit remains an ordinary main-agent message when no episode is running and does not create a work episode
+- regular composer submit is blocked while a Nitro episode is running for that conversation
+- the Nitro composer submit button is the explicit work-episode entry point and starts the first round
+- round completion inserts a real compact `system` message into the main conversation with deep links to episode and round details
+- compact work panel can show current episode and round status from existing thread state
 - full ChatView remains available as transcript/detail fallback
 
 Quality bar:
 
 - provider execution remains unchanged
 - thread id is not the user-facing product identity in new UI
-- each work episode has a separate main-agent conversation state even when episodes share the same project ownership map
+- each project can have many conversations, each conversation can have many episodes, and all episodes share the project ownership map
+- each episode has separate round, trace, blocker, result-message, and abort state
 - no duplicated send-turn logic
-- Enter and the regular send button do not call the work-episode adapter
-- clicking the Nitro button goes through the work-episode adapter and creates or resumes the episode/round
+- Enter and the regular send button do not call the work-episode adapter and remain disabled/blocked while the conversation has a running Nitro episode
+- clicking the Nitro button goes through the work-episode adapter and creates a new episode/first round for the current conversation
+- Work owns episode, round, trace graph, invocation state, blocker, and abort details; the main conversation stays lean
 - no global current-thread fallback is allowed for work episode mapping
-- `NitroWorkEpisodeSummary` includes `backingThreadId` and `transcriptRoute`
+- `NitroWorkEpisodeSummary` includes `conversationThreadId`, `startedFromMessageId`, `backingThreadId`, and `transcriptRoute`
+- round summaries expose the `system` result message id when one exists
 - work-episode selection-to-detail behavior is defined and tested
 - active turns can be aborted from the work episode UI without opening the transcript
 - blocking approval, pending input, failure, diff, and terminal states are reachable from the work episode UI
@@ -1161,7 +1192,7 @@ Quality bar:
 - no broken startup flow
 - remote environments still bootstrap
 - settings and command palette still work
-- when both project and thread bootstrap ids exist, landing prefers project map and exposes the thread as active work
+- when both project and thread bootstrap ids exist, landing prefers project map, treats the thread as a known conversation, and shows active work only when an episode mapping exists
 - deep links to `/$environmentId/$threadId` still open the transcript view
 
 ### Milestone 7: Prepare Backend Contracts
