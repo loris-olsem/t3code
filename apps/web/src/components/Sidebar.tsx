@@ -4,6 +4,7 @@ import {
   ChevronRightIcon,
   CloudIcon,
   GitPullRequestIcon,
+  MapIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -39,6 +40,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   type DesktopUpdateState,
+  type EnvironmentId,
   ProjectId,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
@@ -94,6 +96,7 @@ import {
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
+import { NITRO_MAP_ROUTE_BY_VIEW, buildNitroMapRouteParams } from "../nitromap/routes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -2020,6 +2023,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         <Tooltip>
           <TooltipTrigger
             render={
+              <div className="pointer-events-none absolute top-1 right-7 opacity-0 transition-opacity duration-150 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+                <Link
+                  to={NITRO_MAP_ROUTE_BY_VIEW.map}
+                  params={buildNitroMapRouteParams({
+                    environmentId: project.environmentId,
+                    projectId: project.id,
+                  })}
+                  aria-label={`Open map for ${project.displayName}`}
+                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <MapIcon className="size-3.5" />
+                </Link>
+              </div>
+            }
+          />
+          <TooltipPopup side="top">Project map</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
               <div className="pointer-events-none absolute top-1 right-1.5 opacity-0 transition-opacity duration-150 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
                 <button
                   type="button"
@@ -2707,6 +2731,13 @@ export default function Sidebar() {
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
+  const routeProjectRef = useParams({
+    strict: false,
+    select: (params) =>
+      params.environmentId && params.projectId
+        ? scopeProjectRef(params.environmentId as EnvironmentId, params.projectId as ProjectId)
+        : null,
+  });
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
   const keybindings = useServerKeybindings();
   const openAddProjectCommandPalette = useCommandPaletteStore((store) => store.openAddProject);
@@ -2791,6 +2822,12 @@ export default function Sidebar() {
   // Resolve the active route's project key to a logical key so it matches the
   // sidebar's grouped project entries.
   const activeRouteProjectKey = useMemo(() => {
+    if (routeProjectRef) {
+      const physicalKey =
+        projectPhysicalKeyByScopedRef.get(scopedProjectKey(routeProjectRef)) ??
+        scopedProjectKey(routeProjectRef);
+      return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
+    }
     if (!routeThreadKey) {
       return null;
     }
@@ -2801,7 +2838,13 @@ export default function Sidebar() {
         scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId)),
       ) ?? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId));
     return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
-  }, [routeThreadKey, sidebarThreadByKey, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
+  }, [
+    routeProjectRef,
+    routeThreadKey,
+    sidebarThreadByKey,
+    physicalToLogicalKey,
+    projectPhysicalKeyByScopedRef,
+  ]);
 
   // Group threads by logical project key so all threads from grouped projects
   // are displayed together.

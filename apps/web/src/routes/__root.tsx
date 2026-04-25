@@ -13,6 +13,7 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { NitroMapAppLayout } from "../components/NitroMapAppLayout";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -94,6 +95,7 @@ function RootRouteView() {
   if (authGateState.status !== "authenticated") {
     return <Outlet />;
   }
+  const Shell = pathname.startsWith("/projects/") ? NitroMapAppLayout : AppSidebarLayout;
   return (
     <ToastProvider>
       <AnchoredToastProvider>
@@ -105,9 +107,9 @@ function RootRouteView() {
         <SlowRpcAckToastCoordinator />
         <WebSocketConnectionSurface>
           <CommandPalette>
-            <AppSidebarLayout>
+            <Shell>
               <Outlet />
-            </AppSidebarLayout>
+            </Shell>
           </CommandPalette>
         </WebSocketConnectionSurface>
       </AnchoredToastProvider>

@@ -117,7 +117,7 @@ type ConcreteResponsibility =
     };
 ```
 
-This is a future expansion sketch, not the first runtime contract. The important requirement is that concrete ownership must be computable. A supervisor can still explain a responsibility in natural language, but the system needs a query it can evaluate.
+This is a future expansion sketch, not the first runtime contract. The important requirement is that concrete ownership must be computable. The Cartographer can still explain a responsibility in natural language, but the system needs a query it can evaluate.
 
 Queries should also be composable. A build engineer may have an abstract build responsibility plus several concrete responsibilities:
 
@@ -128,11 +128,11 @@ Queries should also be composable. A build engineer may have an abstract build r
 
 The map should retain the distinction between the broad management concern and each concrete query-backed resource scope.
 
-## Supervisor
+## Cartographer
 
-Every project has a special management agent called the supervisor. The supervisor is responsible for creating, deleting, consolidating, and modifying ownership agents.
+Every project has a special map-maintenance reconciler called the Cartographer. The Cartographer is responsible for creating, deleting, consolidating, and modifying ownership agents.
 
-The supervisor is implemented as a skill. Its job is not to perform normal implementation work directly. Its job is to maintain the project organization:
+The Cartographer is implemented as a skill outside the ownership-agent graph. It is not persisted as an `OwnershipAgent`, does not participate in supervision edges, and does not have normal work-episode conversational state. Its job is not to perform normal implementation work directly. Its job is to maintain the project organization:
 
 - discover existing project structure
 - create initial ownership agents
@@ -144,15 +144,15 @@ The supervisor is implemented as a skill. Its job is not to perform normal imple
 - delete agents whose role no longer exists
 - update ownership hierarchy when concrete and abstract scopes overlap
 
-Ownership agents do not experience these changes as external edits to their personality. From an individual ownership agent's point of view, its current role is simply what it is. The supervisor can modify an agent's core behavior and responsibility behind the scenes, and the agent should act according to the latest assigned scope.
+Ownership agents do not experience these changes as external edits to their personality. From an individual ownership agent's point of view, its current role is simply what it is. The Cartographer can modify an agent's core behavior and responsibility behind the scenes, and the agent should act according to the latest assigned scope.
 
-The supervisor should not be in the hot path for every normal work review. Its primary responsibility is maintaining the ownership graph and the routing rules that make agent activation predictable. Normal implementation and management agents participate in work rounds; the supervisor wakes for map-maintenance events.
+The Cartographer should not be in the hot path for every normal work review. Its primary responsibility is maintaining the ownership graph and the routing rules that make agent activation predictable. Normal implementation and management agents participate in work rounds; the Cartographer wakes for map-maintenance events.
 
-The supervisor should operate as a reconciler skill:
+The Cartographer should operate as a reconciler skill:
 
 ```text
 current ownership map + reconciliation reason + bounded evidence
-  -> supervisor skill
+  -> cartographer skill
   -> JSON actions
   -> runtime validation
   -> ownership map update
@@ -160,7 +160,7 @@ current ownership map + reconciliation reason + bounded evidence
 
 It should return structured map updates, not conversational advice. The application applies those updates only after validating that agent references, file matchers, and supervision edges remain coherent.
 
-Supervisor wake events should be concrete and structured, for example:
+Cartographer wake events should be concrete and structured, for example:
 
 - project initialized
 - user requested ownership recomputation
@@ -172,15 +172,15 @@ Supervisor wake events should be concrete and structured, for example:
 - a responsibility query became stale
 - the user corrected an ownership assignment
 
-This keeps the supervisor reliable and auditable. It maintains the organization; it does not become an invisible extra reviewer for every file change.
+This keeps the Cartographer reliable and auditable. It maintains the organization; it does not become an invisible extra reviewer for every file change.
 
-The supervisor skill's output should be JSON with a summary and a list of actions. Actions should cover real reconciliation operations:
+The Cartographer skill's output should be JSON with a summary and a list of map reconciliation actions. Actions should cover real reconciliation operations:
 
 - create, update, and delete agents
 - create, update, and delete file responsibilities
 - create, update, and delete supervision edges
 
-The skill should not be artificially limited to soft deletes. If an agent, responsibility, or supervision edge is wrong, redundant, or no longer exists as a useful role, the supervisor can delete it. The runtime should reject invalid resulting maps rather than asking the user to approve routine cleanup.
+The skill should not be artificially limited to soft deletes. If an agent, responsibility, or supervision edge is wrong, redundant, or no longer exists as a useful role, the Cartographer can delete it. The runtime should reject invalid resulting maps rather than asking the user to approve routine cleanup.
 
 ## Ownership Agents
 
@@ -238,6 +238,11 @@ type OwnershipAgent = {
 
   /**
    * Stable role description used to build the agent prompt.
+   *
+   * For management agents, this is also the V1 management responsibility
+   * definition. The first implementation does not add a separate
+   * ManagementResponsibility table/type; the Cartographer updates management
+   * scope by updating this purpose and the supervision edges around the agent.
    */
   purpose: string;
 
@@ -307,7 +312,7 @@ type FileResponsibility = {
    *
    * The runtime should not use confidence to decide whether a file matches.
    * Matching is only root + query. Confidence is for reconciliation priority,
-   * UI explainability, and deciding what the supervisor should revisit.
+   * UI explainability, and deciding what the Cartographer should revisit.
    */
   confidence: number;
 
@@ -321,7 +326,7 @@ type FileResponsibility = {
 };
 ```
 
-Supervision edges define the management hierarchy. A management agent can supervise implementation agents or other management agents:
+Supervision edges define the management hierarchy. A management agent can supervise any number of child agents, and each child can be either an implementation agent or another management agent:
 
 ```ts
 type SupervisionEdge = {
@@ -335,8 +340,8 @@ type SupervisionEdge = {
   /**
    * Can point to either an implementation agent or another management agent.
    *
-   * If the child emits a response during a round, this can wake the supervisor
-   * agent in the next supervision layer.
+   * If the child emits a response during a round, this can wake the supervising
+   * management agent in the next supervision layer.
    */
   childAgentId: string;
 
@@ -385,13 +390,13 @@ The distinction is semantic, not merely visual:
 - both can appear in the ownership map
 - only implementation agents own responsibilities over workspace-local implementation scope
 
-Implementation agents wake from concrete resource changes. Management agents wake from responses produced by agents below them. The child can be an implementation agent or another management agent.
+Implementation agents wake from concrete resource changes. Management agents wake from responses produced by agents below them. A management agent can supervise multiple children, and each child can be an implementation agent or another management agent.
 
 This creates a clear hierarchy:
 
 - implementation agent: "a file or directory I own changed"
 - management agent: "an agent under my concern responded"
-- supervisor: "the ownership graph itself may need to change"
+- Cartographer: "the ownership graph itself may need to change"
 
 Management agents should not depend on file resources directly in the first version. They sit above other agents and synthesize, escalate, or resolve cross-cutting concerns from the responses they supervise. For example, a frontend feature-area manager may wake after the web UI owner responds, and a frontend architecture manager may wake after that feature-area manager responds.
 
@@ -418,9 +423,9 @@ agent produced a response
   -> wake supervisorAgentId
 ```
 
-There is no separate "meaningful response" filter for management activation. If an agent decides to respond, its direct supervisors are woken. If an agent was woken but has nothing to contribute, it should produce no response event, and no supervisor wakes from it.
+There is no separate "meaningful response" filter for management activation. If an agent decides to respond, its direct supervising management agents are woken. If an agent was woken but has nothing to contribute, it should produce no response event, and no management parent wakes from it.
 
-The runtime should process management layers until no new supervisors wake, with cycle detection and a maximum depth.
+The runtime should process management layers until no new supervising management agents wake, with cycle detection and a maximum depth.
 
 ## Work Rounds
 
@@ -445,10 +450,14 @@ Batching at the user-facing agent's turn boundary is important. It prevents piec
 
 The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
 
-The supervisor skill should receive a fixed reconciliation input:
+After the user sends a message to the main agent for a project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The UI should make those inserted traces inspectable in a compact threaded form, similar to a Slack-style thread of contextual replies, without turning the work round into a many-agent chat room.
+
+The user must still be able to abort an active conversation or work round. Abort means stopping the current user-facing agent turn and any pending ownership-agent phases that have not yet been injected. Already persisted messages, traces, and map state remain inspectable; aborting a conversation does not mutate the ownership map.
+
+The Cartographer skill should receive a fixed reconciliation input:
 
 ```ts
-type SupervisorInput = {
+type CartographerInput = {
   reason:
     | "unowned-file"
     | "overlapping-owners"
@@ -492,15 +501,15 @@ type SupervisorInput = {
 };
 ```
 
-The supervisor skill should return only JSON matching this shape:
+The Cartographer skill should return only JSON matching this shape:
 
 ```ts
-type SupervisorOutput = {
+type CartographerOutput = {
   summary: string;
-  actions: SupervisorAction[];
+  actions: MapReconciliationAction[];
 };
 
-type SupervisorAction =
+type MapReconciliationAction =
   | {
       type: "create-agent";
       agent: Omit<OwnershipAgent, "createdAt" | "updatedAt">;
@@ -560,7 +569,7 @@ type SupervisorAction =
     };
 ```
 
-The runtime should validate supervisor output before applying it:
+The runtime should validate Cartographer output before applying it:
 
 - `FileResponsibility.agentId` must point to an implementation agent
 - `SupervisionEdge.supervisorAgentId` must point to a management agent
@@ -574,7 +583,7 @@ The runtime should validate supervisor output before applying it:
 - `confidence` must be between `0` and `1`
 - file matching ignores `confidence`
 
-Supervisor output should be applied as a transaction. Actions do not need to be valid one-by-one; the batch must be valid after all actions are applied to an in-memory copy of the current map.
+Cartographer output should be applied as a transaction. Actions do not need to be valid one-by-one; the batch must be valid after all actions are applied to an in-memory copy of the current map.
 
 ```text
 current map
@@ -591,15 +600,15 @@ Validation should run in two stages:
 - preflight validation: action type is known, referenced ids exist where required, created ids do not already exist, no duplicate creates exist in the same batch, and JSON matches the schema
 - final-state validation: no dangling references remain, no active supervision cycles exist, active file responsibilities point to implementation agents, active supervision edges have management supervisors and existing children, active implementation agents have active responsibilities, active management agents have active child edges unless explicitly allowed as empty top-level managers, file includes are non-empty, excludes exist, and confidence values are between `0` and `1`
 
-Each applied supervisor batch should be recorded for auditability and restart recovery:
+Each applied map reconciliation batch should be recorded for auditability and restart recovery:
 
 ```ts
-type SupervisorReconciliationBatch = {
+type MapReconciliationBatch = {
   batchId: string;
   projectId: string;
-  reason: SupervisorInput["reason"];
+  reason: CartographerInput["reason"];
   inputSummary: string;
-  actions: SupervisorAction[];
+  actions: MapReconciliationAction[];
   createdAt: string;
 };
 ```
@@ -669,10 +678,24 @@ type OwnershipTrace = {
   responses: OwnershipAgentResponse[];
 
   /**
-   * Whether this trace was injected into the user-facing agent directly or
-   * consolidated first.
+   * Trace lifecycle for UI, restart recovery, aborts, and failure reporting.
+   *
+   * - pending: ownership or consolidation work is not finished yet
+   * - injected: raw or consolidated trace was inserted into the main agent context
+   * - failure-injected: a synthetic failure trace was inserted into the main agent context
+   * - aborted: the user aborted before this trace was injected
+   * - failed: trace production failed before a failure trace could be injected
    */
-  injection: { mode: "raw" } | { mode: "consolidated"; consolidationId: string };
+  status: "pending" | "injected" | "failure-injected" | "aborted" | "failed";
+
+  injection:
+    | { mode: "none" }
+    | { mode: "raw"; injectedAt: string }
+    | { mode: "consolidated"; consolidationId: string; injectedAt: string }
+    | { mode: "failure"; failureTraceId: string; injectedAt: string };
+
+  abortReason?: string;
+  failureReason?: string;
 };
 ```
 
@@ -684,13 +707,13 @@ Web UI Owner
   -> Frontend Architecture Manager
 ```
 
-All traces are eventually injected into the user-facing agent. If a trace is small enough, the raw trace can be inserted directly. If a trace is too large by character count, it should be consolidated by a separate consolidation agent with the user-facing agent's context, then the consolidated trace is injected.
+All completed traces are eventually injected into the user-facing agent unless the user aborts the round first. If a trace is small enough, the raw trace can be inserted directly. If a trace is too large by character count, it should be consolidated by a separate consolidation agent with the user-facing agent's context, then the consolidated trace is injected.
 
 Trace size should use a fixed character limit derived from the active model's context size. The limit should be deterministic for a given model/configuration so trace injection behavior is predictable.
 
 The consolidation agent should not invent new findings. Its job is to compress, group, deduplicate, preserve attribution, and keep blocking findings and recommendations explicit.
 
-If an ownership agent, management chain, or consolidation agent fails during a round, the system should inject a failure trace into the user-facing agent rather than retrying or blocking indefinitely. The failure trace should identify the failed agent or phase and enough context for the user-facing agent to continue honestly. A later version may expose a tool that lets the user-facing agent explicitly retrigger a failed trace.
+If an ownership agent, management chain, or consolidation agent fails during a round, the system should inject a failure trace into the user-facing agent rather than retrying or blocking indefinitely. The failure trace should identify the failed agent or phase and enough context for the user-facing agent to continue honestly. If even failure-trace injection cannot be completed, the trace remains `failed` for UI inspection and restart recovery. A later version may expose a tool that lets the user-facing agent explicitly retrigger a failed trace.
 
 After implementation and management phases complete, the system should build a round packet for the user-facing agent. The packet should not be a raw transcript dump. It should explain:
 
@@ -701,6 +724,8 @@ After implementation and management phases complete, the system should build a r
 - required next actions
 - which traces were injected raw
 - which traces were consolidated
+- which traces failed
+- which traces were aborted
 
 Large traces may be consolidated, but consolidation should preserve structured severity, ownership attribution, required actions, and unresolved conflicts.
 
@@ -729,6 +754,8 @@ The difference is that the user-facing agent operates in the context of the owne
 - route concrete implementation questions to implementation agents
 - consider interventions from ownership agents during work
 - explain conflicts or unresolved ownership disagreements to the user when needed
+
+Each project conversation has its own user-facing main agent state. Different conversations in the same project share the same durable ownership map, but they are separate work episodes with separate main-agent conversational state, turn history, and abort lifecycle. Ownership agents are activated from the shared project map, not from a conversation-specific copy of the map.
 
 In many cases, the ownership agent should intervene before being asked. If it observes relevant files, diffs, terminal output, provider events, or remote-resource changes, it may decide that the active work episode needs guidance.
 
@@ -762,15 +789,18 @@ This makes the application understandable as a project organization, not a many-
 
 ## Conversation And Reset Semantics
 
-A new conversation resets the active ownership agents' conversational state, but it does not reset the ownership map.
+A new conversation creates fresh per-work-episode conversational state for the ownership agents it activates, but it does not reset the ownership map or mutate state for other active conversations.
 
 The map is project memory. It persists until the user explicitly asks to recompute it from scratch or until the system applies a partial recomputation heuristic.
+
+Conversations in the same project share the same ownership map and agent definitions, but they do not share the same main agent. Each conversation is a separate work episode with its own user-facing main agent state, transcript, pending round state, and abort status.
 
 Expected reset behavior:
 
 - starting a new conversation clears ephemeral work-episode context
-- ownership agents begin the new episode with fresh conversation state
-- agent definitions, scopes, hierarchy, and supervisor-maintained organization persist
+- starting a new conversation creates a separate user-facing main agent state for that conversation
+- ownership agents activated for the new episode receive fresh per-episode conversation state
+- agent definitions, scopes, hierarchy, and Cartographer-maintained organization persist
 - ownership agents remain memory-light; do not add separate long-term per-agent memory beyond the durable ownership map in the first implementation
 - the user can explicitly request a full ownership-map recompute
 - the system may perform partial recomputation when project structure changes enough to justify it
@@ -781,7 +811,7 @@ The distinction matters because the ownership map represents project organizatio
 
 The ownership map should evolve over time.
 
-Initial ownership can be derived from repository structure, package boundaries, file types, naming conventions, existing docs, tests, CI, and recent user activity. That initial map will be imperfect. The supervisor should refine it as evidence accumulates.
+Initial ownership can be derived from repository structure, package boundaries, file types, naming conventions, existing docs, tests, CI, and recent user activity. That initial map will be imperfect. The Cartographer should refine it as evidence accumulates.
 
 Map evolution can be triggered by:
 
@@ -792,7 +822,7 @@ Map evolution can be triggered by:
 - stale scopes with no matching artifacts
 - new remote resources
 - user corrections
-- supervisor review
+- scheduled Cartographer audit
 - explicit recompute commands
 
 The system should prefer stable, predictable ownership over excessive churn. A map that changes constantly will be hard for users and agents to trust.
@@ -809,7 +839,7 @@ The new first-order surfaces are:
 - agent details
 - scope details
 - intervention stream
-- map recomputation and supervisor actions
+- map recomputation and reconciliation actions
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
@@ -819,7 +849,7 @@ The active work episode can still include a conversational transcript, but it sh
 
 NitroMap should feel like an operational project map, not a chat product with extra panels.
 
-The default project screen should make the ownership map the dominant surface. A compact left navigation can switch between projects, map, conversations, supervisor, agents, and activity, but the center of gravity is the map canvas. The user should arrive in a project and immediately see the important owned resources, which agents own them, where responsibility overlaps, and what work is active.
+The default project screen should make the ownership map the dominant surface. A compact left navigation can switch between projects, map, work, Map Maintenance, agents, and activity, but the center of gravity is the map canvas. The user should arrive in a project and immediately see the important owned resources, which agents own them, where responsibility overlaps, and what work is active.
 
 The map canvas should render resources as legible visual nodes rather than as a plain filesystem tree. Useful node categories include:
 
@@ -838,23 +868,23 @@ Implementation-agent ownership should be shown adjacent to the resources it appl
 The UI should support at least three inspection paths:
 
 - resource inspection: what this node represents, which queries selected it, who owns it, and what changed recently
-- agent inspection: role, type, responsibilities, matched resources, recent interventions, and supervisor rationale
-- ownership-change inspection: what the supervisor changed, from whom, to whom, why, and when
+- agent inspection: role, type, responsibilities, matched resources, recent interventions, and Cartographer rationale
+- ownership-change inspection: what the Cartographer changed, from whom, to whom, why, and when
 
-The active user conversation should be compact. It should show the current request, active work state, involved agents, interventions, changed resources, approvals, and final outcome. It should not render a long chat transcript by default. NitroMap assumes users inspect details through the editor, diffs, resource panels, terminals, and map nodes when they need precision.
+The active work episode should be compact. It should show the current request, active work state, involved agents, interventions, changed resources, approvals, and final outcome. It should not render a long chat transcript by default. NitroMap assumes users inspect details through the editor, diffs, resource panels, terminals, and map nodes when they need precision.
 
 Conversation history still exists, but it is not primary navigation. A project can have many conversations, and all conversations share the same ownership map and agent assignment. A conversation is a work episode over the project organization, not an isolated chat room with its own agent universe.
 
-The supervisor needs a separate, explicit surface. This can be a dedicated supervisor panel, tab, or chat-like control area attached to the map. Its purpose is map maintenance:
+The Cartographer needs a separate, explicit surface. This should be exposed to users as Map Maintenance: a dedicated panel, tab, or chat-like control area attached to the map. Its purpose is map maintenance:
 
 - recompute ownership
 - explain why an agent owns a resource
 - change responsibility queries
 - split or merge agents
-- inspect or revert supervisor-applied ownership changes
+- inspect or revert Cartographer-applied ownership changes
 - inspect recomputation history
 
-Supervisor actions should be visible as map diffs rather than buried in prose. The user should be able to see agents added, agents removed, responsibilities changed, query matches changed, and hierarchy changes.
+Map reconciliation actions should be visible as map diffs rather than buried in prose. The user should be able to see agents added, agents removed, responsibilities changed, query matches changed, and hierarchy changes.
 
 Interventions should appear in both the active work panel and the map. A warning from a build engineer should visually connect to the affected build resources. A test-owner intervention should connect to the relevant test nodes. This makes agent feedback spatially grounded and prevents the activity stream from becoming another chat log.
 
@@ -865,11 +895,11 @@ The map should prioritize usability across several dimensions:
 - hierarchy: abstract and concrete ownership relationships are visible without flattening everything into path globs
 - actionability: active work, interventions, and changed resources are one click away from details
 - compactness: chat history is summarized and does not consume the main interface
-- explainability: every ownership assignment can be traced to a query, rationale, supervisor action, or recomputation result
+- explainability: every ownership assignment can be traced to a query, rationale, map reconciliation action, or recomputation result
 - stability: the map should not rearrange unpredictably while work is in progress
 - performance: large histories and verbose transcripts should stay out of the hot rendering path
 - debuggability: ownership conflicts, stale assignments, and low-confidence scopes should be inspectable
-- recoverability: recompute actions and supervisor edits should have visible history and reversibility
+- recoverability: recompute actions and Cartographer edits should have visible history and reversibility
 
 ## Relationship To Current Architecture
 
@@ -887,14 +917,14 @@ The current architecture already has useful primitives:
 
 The ownership-map system can build on these concepts, but it likely needs new domain objects. Threads are not enough. A thread currently represents the primary user-facing work container. In the ownership model, the durable project-level graph is primary, and a conversation is only one kind of work episode attached to that graph.
 
-The ownership map should be stored per project and survive application restarts. It should be server-owned durable state, not frontend-only state. The frontend can render and inspect the map, but supervisor JSON should be applied and validated on the server before persistence.
+The ownership map should be stored per project and survive application restarts. It should be server-owned durable state, not frontend-only state. The frontend can render and inspect the map, but Cartographer JSON should be applied and validated on the server before persistence.
 
 Minimum durable storage should support:
 
 - ownership agents
 - file responsibilities
 - supervision edges
-- supervisor reconciliation batches
+- map reconciliation batches
 - ownership agent responses
 - ownership traces
 - trace consolidations
@@ -907,13 +937,14 @@ Expected durable domain objects:
 - ownership agent
 - file responsibility
 - supervision edge
-- supervisor reconciliation batch
+- map reconciliation batch
 - ownership agent response
 - ownership trace
 - trace consolidation
 - work episode
-- agent memory snapshot
 - map recomputation job
+
+Do not add a separate long-term per-agent memory store in the first implementation. If the runtime needs restart recovery for an in-flight round, persist bounded work-episode context such as responses, traces, consolidations, and round packets rather than durable personal memory for each ownership agent.
 
 The current event-sourced orchestration style is a strong fit for this model because ownership changes, interventions, and work-episode activity all need to be observable, replayable, and projectable into UI state.
 
@@ -933,7 +964,7 @@ Arrow meaning:
 
 ```mermaid
 graph TD
-  SupervisorSkill[Supervisor Skill - reconciles ownership map]
+  CartographerSkill[Cartographer Skill - reconciles ownership map]
   Map[OwnershipMap - per project, durable]
 
   MgmtA[Management Agent - Frontend Architecture]
@@ -946,7 +977,7 @@ graph TD
   FilesA[Project files - apps/web/src]
   FilesB[Project files - packages/contracts/src]
 
-  SupervisorSkill -- JSON reconciliation actions update --> Map
+  CartographerSkill -- JSON reconciliation actions update --> Map
   Map -- contains --> MgmtA
   Map -- contains --> MgmtB
   Map -- contains --> ImplA
@@ -1001,8 +1032,8 @@ Viewpoint: a single trace created by one implementation-agent response.
 
 Arrow meaning:
 
-- `response wakes supervisor`: the child agent produced a response, so every active direct supervisor edge wakes
-- `appends response`: the supervisor response becomes the next entry in the same trace
+- `response wakes management parent`: the child agent produced a response, so every active direct supervision edge wakes
+- `appends response`: the management response becomes the next entry in the same trace
 
 ```mermaid
 graph LR
@@ -1017,14 +1048,14 @@ graph LR
   Change -- matches --> Resp
   Resp -- wakes owner --> Impl
   Impl -- response starts trace --> Trace
-  Impl -- response wakes supervisor --> Mgmt1
+  Impl -- response wakes management parent --> Mgmt1
   Mgmt1 -- appends response --> Trace
-  Mgmt1 -- response wakes supervisor --> Mgmt2
+  Mgmt1 -- response wakes management parent --> Mgmt2
   Mgmt2 -- appends response --> Trace
   Trace -- raw or consolidated injection --> Main
 ```
 
-### Supervisor Reconciliation
+### Cartographer Reconciliation
 
 Viewpoint: ownership-map maintenance.
 
@@ -1036,9 +1067,9 @@ Arrow meaning:
 ```mermaid
 graph TD
   Event[Reconciliation event - unowned file, stale query, user correction]
-  Input[SupervisorInput - current map, reason, bounded evidence]
-  Skill[Supervisor Skill - reconciler]
-  Output[SupervisorOutput - JSON actions]
+  Input[CartographerInput - current map, reason, bounded evidence]
+  Skill[Cartographer Skill - reconciler]
+  Output[CartographerOutput - JSON actions]
   Preflight[Preflight validation - schema, ids, duplicate creates]
   Apply[Apply actions in memory - transaction candidate]
   Final[Final-state validation - references, cycles, active invariants]
@@ -1060,4 +1091,4 @@ graph TD
 
 The goal is not to decorate a chat app with agent labels. The goal is to make project responsibility the central interface.
 
-The user should feel that the project has an adaptive organization around it. Agents are not merely personas in a sidebar. They are persistent owners of project responsibilities, coordinated by a supervisor, surfaced through a map, and involved in work because the scope of the work touches what they own.
+The user should feel that the project has an adaptive organization around it. Agents are not merely personas in a sidebar. They are persistent owners of project responsibilities, coordinated by the Cartographer, surfaced through a map, and involved in work because the scope of the work touches what they own.
