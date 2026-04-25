@@ -2832,8 +2832,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       const icons = Array.from(nitroButton.querySelectorAll("img"));
       expect(icons).toHaveLength(2);
-      expect(icons.some((icon) => icon.className.includes("group-hover:opacity-0"))).toBe(true);
-      expect(icons.some((icon) => icon.className.includes("group-hover:opacity-100"))).toBe(true);
+      expect(nitroButton.className).toContain("group/nitro");
+      expect(icons.some((icon) => icon.className.includes("group-hover/nitro:opacity-0"))).toBe(
+        true,
+      );
+      expect(icons.some((icon) => icon.className.includes("group-hover/nitro:opacity-100"))).toBe(
+        true,
+      );
     } finally {
       await mounted.cleanup();
     }

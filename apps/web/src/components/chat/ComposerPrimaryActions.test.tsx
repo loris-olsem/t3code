@@ -33,8 +33,9 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain("h-12");
     expect(markup).toContain("w-12");
     expect(markup.match(/<img /g)).toHaveLength(2);
-    expect(markup).toContain("group-hover:opacity-0");
-    expect(markup).toContain("group-hover:opacity-100");
+    expect(markup).toContain("group/nitro");
+    expect(markup).toContain("group-hover/nitro:opacity-0");
+    expect(markup).toContain("group-hover/nitro:opacity-100");
     expect(markup).toContain('aria-label="Send message"');
     expect(markup).toContain('type="submit"');
   });

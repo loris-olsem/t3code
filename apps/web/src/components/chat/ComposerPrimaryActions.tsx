@@ -237,7 +237,7 @@ export const NitroSubmitButton = memo(function NitroSubmitButton({
     <button
       type="button"
       data-testid="nitro-submit-button"
-      className="group relative flex h-12 w-12 shrink-0 enabled:cursor-pointer items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 hover:scale-105 hover:border-orange-400 hover:bg-orange-500/10 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100"
+      className="group/nitro relative flex h-12 w-12 shrink-0 enabled:cursor-pointer items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 hover:scale-105 hover:border-orange-400 hover:bg-orange-500/10 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100"
       disabled={disabled}
       aria-label="Start Nitro episode"
       title="Start Nitro episode"
@@ -247,14 +247,14 @@ export const NitroSubmitButton = memo(function NitroSubmitButton({
         src={nitroIconUrl}
         alt=""
         aria-hidden="true"
-        className="size-8 transition-opacity group-hover:opacity-0"
+        className="size-8 transition-opacity group-hover/nitro:opacity-0"
         draggable={false}
       />
       <img
         src={nitroAnimatedIconUrl}
         alt=""
         aria-hidden="true"
-        className="absolute size-8 opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute size-8 opacity-0 transition-opacity group-hover/nitro:opacity-100"
         draggable={false}
       />
     </button>
