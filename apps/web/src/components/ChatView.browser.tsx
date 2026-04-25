@@ -2813,14 +2813,22 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       const nitroButton = await waitForNitroSubmitButton();
       const sendButton = await waitForSendButton();
-      const actions = document.querySelector<HTMLElement>('[data-chat-composer-actions="right"]');
+      const leftActions = document.querySelector<HTMLElement>(
+        '[data-chat-composer-actions="left"]',
+      );
+      const rightActions = document.querySelector<HTMLElement>(
+        '[data-chat-composer-actions="right"]',
+      );
 
-      expect(actions?.contains(nitroButton)).toBe(true);
-      expect(actions?.contains(sendButton)).toBe(true);
+      expect(leftActions?.contains(nitroButton)).toBe(true);
+      expect(rightActions?.contains(nitroButton)).toBe(false);
+      expect(rightActions?.contains(sendButton)).toBe(true);
       expect(nitroButton.type).toBe("button");
       expect(sendButton.type).toBe("submit");
       expect(nitroButton.disabled).toBe(false);
       expect(sendButton.disabled).toBe(false);
+      expect(nitroButton.className).toContain("h-12");
+      expect(nitroButton.className).toContain("w-12");
 
       const icons = Array.from(nitroButton.querySelectorAll("img"));
       expect(icons).toHaveLength(2);

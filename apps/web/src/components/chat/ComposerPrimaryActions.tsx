@@ -26,8 +26,12 @@ interface ComposerPrimaryActionsProps {
   hasSendableContent: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
-  onNitroSend: () => void;
   onImplementPlanInNewThread: () => void;
+}
+
+interface NitroSubmitButtonProps {
+  disabled: boolean;
+  onNitroSend: () => void;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -60,7 +64,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   hasSendableContent,
   onPreviousPendingQuestion,
   onInterrupt,
-  onNitroSend,
   onImplementPlanInNewThread,
 }: ComposerPrimaryActionsProps) {
   if (pendingAction) {
@@ -178,76 +181,82 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const disabled = isSendBusy || isConnecting || !hasSendableContent;
   return (
-    <>
-      <button
-        type="button"
-        data-testid="nitro-submit-button"
-        className="group relative flex h-9 w-9 enabled:cursor-pointer items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 hover:scale-105 hover:border-orange-400 hover:bg-orange-500/10 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
-        disabled={disabled}
-        aria-label="Start Nitro episode"
-        title="Start Nitro episode"
-        onClick={onNitroSend}
-      >
-        <img
-          src={nitroIconUrl}
-          alt=""
+    <button
+      type="submit"
+      className="flex h-9 w-9 enabled:cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:scale-105 hover:bg-primary disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
+      disabled={disabled}
+      aria-label={
+        isConnecting
+          ? "Connecting"
+          : isPreparingWorktree
+            ? "Preparing worktree"
+            : isSendBusy
+              ? "Sending"
+              : "Send message"
+      }
+    >
+      {isConnecting || isSendBusy ? (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          className="animate-spin"
           aria-hidden="true"
-          className="size-6 transition-opacity group-hover:opacity-0 sm:size-5"
-          draggable={false}
-        />
-        <img
-          src={nitroAnimatedIconUrl}
-          alt=""
-          aria-hidden="true"
-          className="absolute size-6 opacity-0 transition-opacity group-hover:opacity-100 sm:size-5"
-          draggable={false}
-        />
-      </button>
-      <button
-        type="submit"
-        className="flex h-9 w-9 enabled:cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:scale-105 hover:bg-primary disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
-        disabled={disabled}
-        aria-label={
-          isConnecting
-            ? "Connecting"
-            : isPreparingWorktree
-              ? "Preparing worktree"
-              : isSendBusy
-                ? "Sending"
-                : "Send message"
-        }
-      >
-        {isConnecting || isSendBusy ? (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            className="animate-spin"
-            aria-hidden="true"
-          >
-            <circle
-              cx="7"
-              cy="7"
-              r="5.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeDasharray="20 12"
-            />
-          </svg>
-        ) : (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path
-              d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        )}
-      </button>
-    </>
+        >
+          <circle
+            cx="7"
+            cy="7"
+            r="5.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeDasharray="20 12"
+          />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path
+            d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  );
+});
+
+export const NitroSubmitButton = memo(function NitroSubmitButton({
+  disabled,
+  onNitroSend,
+}: NitroSubmitButtonProps) {
+  return (
+    <button
+      type="button"
+      data-testid="nitro-submit-button"
+      className="group relative flex h-12 w-12 shrink-0 enabled:cursor-pointer items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 hover:scale-105 hover:border-orange-400 hover:bg-orange-500/10 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100"
+      disabled={disabled}
+      aria-label="Start Nitro episode"
+      title="Start Nitro episode"
+      onClick={onNitroSend}
+    >
+      <img
+        src={nitroIconUrl}
+        alt=""
+        aria-hidden="true"
+        className="size-8 transition-opacity group-hover:opacity-0"
+        draggable={false}
+      />
+      <img
+        src={nitroAnimatedIconUrl}
+        alt=""
+        aria-hidden="true"
+        className="absolute size-8 opacity-0 transition-opacity group-hover:opacity-100"
+        draggable={false}
+      />
+    </button>
   );
 });

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerPrimaryActions, NitroSubmitButton } from "./ComposerPrimaryActions";
 
 const baseProps = {
   compact: false,
@@ -21,10 +21,17 @@ const baseProps = {
 
 describe("ComposerPrimaryActions", () => {
   it("keeps Nitro as an explicit non-form submit action beside regular send", () => {
-    const markup = renderToStaticMarkup(<ComposerPrimaryActions {...baseProps} />);
+    const markup = renderToStaticMarkup(
+      <>
+        <NitroSubmitButton disabled={false} onNitroSend={baseProps.onNitroSend} />
+        <ComposerPrimaryActions {...baseProps} />
+      </>,
+    );
 
     expect(markup).toContain('aria-label="Start Nitro episode"');
     expect(markup).toContain('type="button"');
+    expect(markup).toContain("h-12");
+    expect(markup).toContain("w-12");
     expect(markup.match(/<img /g)).toHaveLength(2);
     expect(markup).toContain("group-hover:opacity-0");
     expect(markup).toContain("group-hover:opacity-100");
