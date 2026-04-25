@@ -27,6 +27,7 @@ export interface NitroMapRouteParams {
 }
 
 export interface NitroMapDataSource {
+  hasProjectMap(params: NitroMapRouteParams): boolean;
   getProjectMap(params: NitroMapRouteParams): Promise<NitroProjectMap>;
 }
 
@@ -114,6 +115,8 @@ export interface NitroWorkEpisodeSummary {
   id: string;
   environmentId: EnvironmentId;
   projectId: ProjectId;
+  conversationThreadId: ThreadId;
+  startedFromMessageId: string;
   mainAgent: {
     label: string;
     status: "working" | "waiting" | "aborted" | "failed" | "completed";

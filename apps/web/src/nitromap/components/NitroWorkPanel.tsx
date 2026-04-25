@@ -16,8 +16,9 @@ export function NitroWorkPanel(props: {
   map: NitroProjectMap;
   selection: NitroSelectionTarget | null;
   onSelect: (selection: NitroSelectionTarget) => void;
+  onSelectEpisodeRoute?: (episodeId: string) => void;
 }) {
-  const { map, onSelect, selection } = props;
+  const { map, onSelect, onSelectEpisodeRoute, selection } = props;
   const fallbackEpisode = useMemo(() => selectDefaultEpisode(map), [map]);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(
     fallbackEpisode?.id ?? null,
@@ -100,6 +101,7 @@ export function NitroWorkPanel(props: {
                   setSelectedEpisodeId(episode.id);
                   setSelectedRoundId(selectDefaultRound(episode)?.id ?? null);
                   onSelect({ kind: "work-episode", id: episode.id });
+                  onSelectEpisodeRoute?.(episode.id);
                 }}
               >
                 <span className="flex items-center justify-between gap-3">

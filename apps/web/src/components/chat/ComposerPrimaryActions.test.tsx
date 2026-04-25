@@ -1,7 +1,35 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ComposerPrimaryActions, NitroSubmitButton } from "./ComposerPrimaryActions";
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    params,
+    to,
+    ...props
+  }: {
+    children: React.ReactNode;
+    params: Record<string, string>;
+    to: string;
+  }) => (
+    <a
+      href={to
+        .replace("$environmentId", params.environmentId)
+        .replace("$projectId", params.projectId)}
+      {...props}
+    >
+      {children}
+    </a>
+  ),
+}));
+
+import {
+  ComposerPrimaryActions,
+  NitroMapContextButton,
+  NitroSubmitButton,
+} from "./ComposerPrimaryActions";
 
 const baseProps = {
   compact: false,
@@ -38,5 +66,32 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain("group-hover/nitro:opacity-100");
     expect(markup).toContain('aria-label="Send message"');
     expect(markup).toContain('type="submit"');
+  });
+
+  it("uses the project-map icon as a real map link", () => {
+    const markup = renderToStaticMarkup(
+      <NitroMapContextButton
+        environmentId={EnvironmentId.make("environment-1")}
+        projectId={ProjectId.make("project-1")}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Open project map"');
+    expect(markup).toContain("lucide-map");
+    expect(markup).toContain("/projects/environment-1/project-1/map");
+  });
+
+  it("explains disabled Nitro when Cartographer has not produced a map", () => {
+    const markup = renderToStaticMarkup(
+      <NitroSubmitButton
+        disabled
+        disabledReason="Run the Cartographer before starting a Nitro episode."
+        onNitroSend={baseProps.onNitroSend}
+      />,
+    );
+
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Run the Cartographer before starting a Nitro episode.");
+    expect(markup).not.toContain("group-hover/nitro");
   });
 });

@@ -1,10 +1,14 @@
 import { memo } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, MapIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import nitroAnimatedIconUrl from "~/assets/agent_harness_nitro_icon_animated.svg?url";
 import nitroIconUrl from "~/assets/agent_harness_nitro_icon.svg?url";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { buildNitroMapRouteParams, NITRO_MAP_ROUTE_BY_VIEW } from "../../nitromap/routes";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 interface PendingActionState {
   questionIndex: number;
@@ -31,7 +35,13 @@ interface ComposerPrimaryActionsProps {
 
 interface NitroSubmitButtonProps {
   disabled: boolean;
+  disabledReason?: string | null;
   onNitroSend: () => void;
+}
+
+interface NitroMapContextButtonProps {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -231,32 +241,66 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
 export const NitroSubmitButton = memo(function NitroSubmitButton({
   disabled,
+  disabledReason,
   onNitroSend,
 }: NitroSubmitButtonProps) {
+  const title = disabledReason ?? "Start Nitro episode";
+  const staticIconClassName = cn(
+    "size-8 transition-opacity",
+    disabled ? "opacity-100" : "group-hover/nitro:opacity-0",
+  );
+  const animatedIconClassName = cn(
+    "absolute size-8 opacity-0 transition-opacity",
+    disabled ? "opacity-0" : "group-hover/nitro:opacity-100",
+  );
   return (
     <button
       type="button"
       data-testid="nitro-submit-button"
-      className="group/nitro relative flex h-12 w-12 shrink-0 enabled:cursor-pointer items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 hover:scale-105 hover:border-orange-400 hover:bg-orange-500/10 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100"
+      className="group/nitro relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-orange-500/45 bg-background text-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:hover:scale-105 enabled:hover:border-orange-400 enabled:hover:bg-orange-500/10 disabled:cursor-not-allowed disabled:opacity-30"
       disabled={disabled}
       aria-label="Start Nitro episode"
-      title="Start Nitro episode"
+      title={title}
       onClick={onNitroSend}
     >
       <img
         src={nitroIconUrl}
         alt=""
         aria-hidden="true"
-        className="size-8 transition-opacity group-hover/nitro:opacity-0"
+        className={staticIconClassName}
         draggable={false}
       />
       <img
         src={nitroAnimatedIconUrl}
         alt=""
         aria-hidden="true"
-        className="absolute size-8 opacity-0 transition-opacity group-hover/nitro:opacity-100"
+        className={animatedIconClassName}
         draggable={false}
       />
     </button>
+  );
+});
+
+export const NitroMapContextButton = memo(function NitroMapContextButton({
+  environmentId,
+  projectId,
+}: NitroMapContextButtonProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            to={NITRO_MAP_ROUTE_BY_VIEW.map}
+            params={buildNitroMapRouteParams({ environmentId, projectId })}
+            data-testid="nitro-map-context-button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Open project map"
+          >
+            <MapIcon className="size-4" aria-hidden="true" />
+          </Link>
+        }
+      />
+      <TooltipPopup side="top">Project map</TooltipPopup>
+    </Tooltip>
   );
 });

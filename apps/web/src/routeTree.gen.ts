@@ -22,6 +22,7 @@ import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$e
 import { Route as NitromapProjectsEnvironmentIdProjectIdWorkRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.work'
 import { Route as NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.map-maintenance'
 import { Route as NitromapProjectsEnvironmentIdProjectIdMapRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.map'
+import { Route as NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.work.$episodeId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -90,6 +91,12 @@ const NitromapProjectsEnvironmentIdProjectIdMapRoute =
     path: '/projects/$environmentId/$projectId/map',
     getParentRoute: () => NitromapRoute,
   } as any)
+const NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute =
+  NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport.update({
+    id: '/$episodeId',
+    path: '/$episodeId',
+    getParentRoute: () => NitromapProjectsEnvironmentIdProjectIdWorkRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
@@ -102,7 +109,8 @@ export interface FileRoutesByFullPath {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
   '/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
-  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof ChatIndexRoute
@@ -115,7 +123,8 @@ export interface FileRoutesByTo {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
   '/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
-  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -131,7 +140,8 @@ export interface FileRoutesById {
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/_nitromap/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
   '/_nitromap/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
-  '/_nitromap/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+  '/_nitromap/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/_nitromap/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/projects/$environmentId/$projectId/map'
     | '/projects/$environmentId/$projectId/map-maintenance'
     | '/projects/$environmentId/$projectId/work'
+    | '/projects/$environmentId/$projectId/work/$episodeId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/projects/$environmentId/$projectId/map'
     | '/projects/$environmentId/$projectId/map-maintenance'
     | '/projects/$environmentId/$projectId/work'
+    | '/projects/$environmentId/$projectId/work/$episodeId'
   id:
     | '__root__'
     | '/_chat'
@@ -175,6 +187,7 @@ export interface FileRouteTypes {
     | '/_nitromap/projects/$environmentId/$projectId/map'
     | '/_nitromap/projects/$environmentId/$projectId/map-maintenance'
     | '/_nitromap/projects/$environmentId/$projectId/work'
+    | '/_nitromap/projects/$environmentId/$projectId/work/$episodeId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -277,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapRouteImport
       parentRoute: typeof NitromapRoute
     }
+    '/_nitromap/projects/$environmentId/$projectId/work/$episodeId': {
+      id: '/_nitromap/projects/$environmentId/$projectId/work/$episodeId'
+      path: '/$episodeId'
+      fullPath: '/projects/$environmentId/$projectId/work/$episodeId'
+      preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport
+      parentRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+    }
   }
 }
 
@@ -294,10 +314,25 @@ const ChatRouteChildren: ChatRouteChildren = {
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
+interface NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren {
+  NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
+}
+
+const NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren: NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren =
+  {
+    NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute:
+      NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute,
+  }
+
+const NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren =
+  NitromapProjectsEnvironmentIdProjectIdWorkRoute._addFileChildren(
+    NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren,
+  )
+
 interface NitromapRouteChildren {
   NitromapProjectsEnvironmentIdProjectIdMapRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
   NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
-  NitromapProjectsEnvironmentIdProjectIdWorkRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+  NitromapProjectsEnvironmentIdProjectIdWorkRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
 }
 
 const NitromapRouteChildren: NitromapRouteChildren = {
@@ -306,7 +341,7 @@ const NitromapRouteChildren: NitromapRouteChildren = {
   NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute:
     NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute,
   NitromapProjectsEnvironmentIdProjectIdWorkRoute:
-    NitromapProjectsEnvironmentIdProjectIdWorkRoute,
+    NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren,
 }
 
 const NitromapRouteWithChildren = NitromapRoute._addFileChildren(

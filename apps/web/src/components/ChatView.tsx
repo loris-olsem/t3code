@@ -153,6 +153,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveNitroSubmitState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -162,6 +163,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveNitroEpisodeCompletion,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -178,6 +180,11 @@ import {
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
+import {
+  getRunningNitroEpisodeForConversation,
+  useNitroWorkEpisodeStore,
+} from "../nitromap/workEpisodeStore";
+import { mockNitroMapDataSource } from "../nitromap/mockData";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -712,6 +719,7 @@ export default function ChatView(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const nitroCompletionInFlightRef = useRef(new Set<string>());
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   const terminalState = useTerminalStateStore((state) =>
@@ -839,6 +847,32 @@ export default function ChatView(props: ChatViewProps) {
   const activeProject = useStore(
     useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
   );
+  const runningNitroEpisode = useNitroWorkEpisodeStore(
+    useMemo(
+      () => (state) =>
+        activeThread && activeProject
+          ? getRunningNitroEpisodeForConversation(state, {
+              environmentId: activeThread.environmentId,
+              projectId: activeProject.id,
+              conversationThreadId: activeThread.id,
+            })
+          : null,
+      [activeProject, activeThread],
+    ),
+  );
+  const startNitroEpisode = useNitroWorkEpisodeStore((state) => state.startEpisode);
+  const finishNitroEpisode = useNitroWorkEpisodeStore((state) => state.finishEpisode);
+  const discardNitroEpisode = useNitroWorkEpisodeStore((state) => state.discardEpisode);
+  const nitroMapAvailable =
+    activeProject !== undefined &&
+    mockNitroMapDataSource.hasProjectMap({
+      environmentId: activeThread?.environmentId ?? environmentId,
+      projectId: activeProject.id,
+    });
+  const nitroSubmitState = deriveNitroSubmitState({
+    hasProjectMap: nitroMapAvailable,
+    hasRunningEpisode: runningNitroEpisode !== null,
+  });
 
   useEffect(() => {
     if (routeKind !== "server") {
@@ -1556,6 +1590,66 @@ export default function ChatView(props: ChatViewProps) {
     },
     [draftId, routeThreadRef, serverThread, setStoreThreadError],
   );
+
+  useEffect(() => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api || !activeThread || !activeProject || !runningNitroEpisode) {
+      return;
+    }
+
+    const completion = resolveNitroEpisodeCompletion({
+      episode: runningNitroEpisode,
+      latestTurn: activeLatestTurn,
+    });
+    if (!completion) return;
+    if (nitroCompletionInFlightRef.current.has(runningNitroEpisode.id)) return;
+
+    const resultMessageId = newMessageId();
+    const workDetailRoute = `/projects/${encodeURIComponent(
+      activeThread.environmentId,
+    )}/${encodeURIComponent(activeProject.id)}/work/${encodeURIComponent(runningNitroEpisode.id)}`;
+
+    nitroCompletionInFlightRef.current.add(runningNitroEpisode.id);
+    void api.orchestration
+      .dispatchCommand({
+        type: "thread.nitro-round.complete",
+        commandId: newCommandId(),
+        threadId: activeThread.id,
+        messageId: resultMessageId,
+        episodeId: runningNitroEpisode.id,
+        roundIndex: 1,
+        status: completion.status,
+        workDetailRoute,
+        createdAt: completion.completedAt,
+      })
+      .then(() => {
+        finishNitroEpisode({
+          environmentId: activeThread.environmentId,
+          projectId: activeProject.id,
+          episodeId: runningNitroEpisode.id,
+          resultMessageId,
+          completedAt: completion.completedAt,
+          status: completion.status,
+        });
+      })
+      .catch((err: unknown) => {
+        setThreadError(
+          activeThread.id,
+          err instanceof Error ? err.message : "Failed to append Nitro result message.",
+        );
+      })
+      .finally(() => {
+        nitroCompletionInFlightRef.current.delete(runningNitroEpisode.id);
+      });
+  }, [
+    activeLatestTurn,
+    activeProject,
+    activeThread,
+    environmentId,
+    finishNitroEpisode,
+    runningNitroEpisode,
+    setThreadError,
+  ]);
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -2377,12 +2471,21 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (e?: { preventDefault: () => void }, options?: { nitro: boolean }) => {
     e?.preventDefault();
+    const isNitroSend = options?.nitro === true;
     const api = readEnvironmentApi(environmentId);
     if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (runningNitroEpisode) {
+      setThreadError(activeThread.id, "Abort or finish the running Nitro episode before sending.");
+      return;
+    }
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
+      return;
+    }
+    if (isNitroSend && nitroSubmitState.nitroDisabledReason) {
+      setThreadError(activeThread.id, nitroSubmitState.nitroDisabledReason);
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
@@ -2539,6 +2642,7 @@ export default function ChatView(props: ChatViewProps) {
     composerRef.current?.resetCursorState();
 
     let turnStartSucceeded = false;
+    let startedNitroEpisodeId: string | null = null;
     await (async () => {
       let firstComposerImageName: string | null = null;
       if (composerImagesSnapshot.length > 0) {
@@ -2558,6 +2662,23 @@ export default function ChatView(props: ChatViewProps) {
         }
       }
       const title = truncate(titleSeed);
+      if (isNitroSend) {
+        const episodeId = `nitro-episode-${randomUUID()}`;
+        const roundId = `nitro-round-${randomUUID()}`;
+        startNitroEpisode({
+          episodeId,
+          roundId,
+          environmentId: activeThread.environmentId,
+          projectId: activeProject.id,
+          conversationThreadId: threadIdForSend,
+          startedFromMessageId: messageIdForSend,
+          title,
+          prompt: trimmed || title,
+          transcriptRoute: `/${encodeURIComponent(activeThread.environmentId)}/${encodeURIComponent(threadIdForSend)}`,
+          createdAt: messageCreatedAt,
+        });
+        startedNitroEpisodeId = episodeId;
+      }
       const threadCreateModelSelection = createModelSelection(
         ctxSelectedProvider,
         ctxSelectedModel ||
@@ -2667,6 +2788,13 @@ export default function ChatView(props: ChatViewProps) {
         threadIdForSend,
         err instanceof Error ? err.message : "Failed to send message.",
       );
+      if (startedNitroEpisodeId) {
+        discardNitroEpisode({
+          environmentId: activeThread.environmentId,
+          projectId: activeProject.id,
+          episodeId: startedNitroEpisodeId,
+        });
+      }
     });
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
@@ -3380,7 +3508,10 @@ export default function ChatView(props: ChatViewProps) {
               shouldAutoScrollRef={isAtEndRef}
               scheduleStickToBottom={scrollToEnd}
               onSend={onSend}
-              onNitroSend={() => void onSend()}
+              onNitroSend={() => void onSend(undefined, { nitro: true })}
+              regularSubmitDisabled={nitroSubmitState.regularSubmitDisabled}
+              nitroDisabled={nitroSubmitState.nitroDisabledReason !== null}
+              nitroDisabledReason={nitroSubmitState.nitroDisabledReason}
               onInterrupt={onInterrupt}
               onImplementPlanInNewThread={onImplementPlanInNewThread}
               onRespondToApproval={onRespondToApproval}

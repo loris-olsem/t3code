@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ActivityIcon, NetworkIcon, WrenchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -24,6 +24,7 @@ import { NitroInspectorPanel } from "./NitroInspectorPanel";
 import { NitroMapCanvas } from "./NitroMapCanvas";
 import { NitroMapMaintenancePanel } from "./NitroMapMaintenancePanel";
 import { NitroWorkPanel } from "./NitroWorkPanel";
+import { getNitroEpisodesForProject, useNitroWorkEpisodeStore } from "../workEpisodeStore";
 
 const VIEW_LABELS: Record<NitroMapView, string> = {
   map: "Map",
@@ -37,8 +38,13 @@ const VIEW_ICONS = {
   "map-maintenance": WrenchIcon,
 } satisfies Record<NitroMapView, typeof ActivityIcon>;
 
-export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view: NitroMapView }) {
-  const { params, view } = props;
+export function NitroMapProjectRoute(props: {
+  params: NitroMapRouteParams;
+  view: NitroMapView;
+  episodeId?: string;
+}) {
+  const { episodeId, params, view } = props;
+  const navigate = useNavigate();
   const routeParams = buildNitroMapRouteParams(params);
   const projectRef = useMemo(
     () => scopeProjectRef(params.environmentId, params.projectId),
@@ -56,14 +62,26 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
     }),
     [params.environmentId, params.projectId],
   );
+  const hasProjectMap = mockNitroMapDataSource.hasProjectMap(dataSourceParams);
   const [mapState, setMapState] = useState<{
     key: string;
     map: NitroProjectMap;
   } | null>(null);
+  const realWorkEpisodes = useNitroWorkEpisodeStore(
+    useMemo(
+      () => (state) => getNitroEpisodesForProject(state, params.environmentId, params.projectId),
+      [params.environmentId, params.projectId],
+    ),
+  );
 
   useEffect(() => {
     let disposed = false;
     setMapState((current) => (current?.key === mapKey ? current : null));
+    if (!hasProjectMap) {
+      return () => {
+        disposed = true;
+      };
+    }
     void mockNitroMapDataSource.getProjectMap(dataSourceParams).then((nextMap) => {
       if (!disposed) {
         setMapState({ key: mapKey, map: nextMap });
@@ -72,11 +90,29 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
     return () => {
       disposed = true;
     };
-  }, [dataSourceParams, mapKey]);
+  }, [dataSourceParams, hasProjectMap, mapKey]);
 
-  const map = mapState?.key === mapKey ? mapState.map : null;
+  const baseMap = mapState?.key === mapKey ? mapState.map : null;
+  const map = useMemo(
+    () =>
+      baseMap
+        ? {
+            ...baseMap,
+            workEpisodes: realWorkEpisodes.length > 0 ? realWorkEpisodes : baseMap.workEpisodes,
+          }
+        : null,
+    [baseMap, realWorkEpisodes],
+  );
   const [selection, setSelection] = useState<NitroSelectionTarget | null>(null);
-  const initialSelection = useMemo(() => (map ? selectInitialNitroSelection(map) : null), [map]);
+  const initialSelection = useMemo<NitroSelectionTarget | null>(
+    () =>
+      map
+        ? episodeId && map.workEpisodes.some((episode) => episode.id === episodeId)
+          ? { kind: "work-episode" as const, id: episodeId }
+          : selectInitialNitroSelection(map)
+        : null,
+    [episodeId, map],
+  );
 
   useEffect(() => {
     setSelection((current) =>
@@ -113,9 +149,31 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
     );
   }
 
+  if (!hasProjectMap) {
+    return (
+      <NitroMapStatusState
+        title="Project map unavailable"
+        detail="Run the Cartographer before starting Nitro work for this project."
+      />
+    );
+  }
+
   if (!map || !counts) {
     return (
       <NitroMapStatusState title="Loading project map" detail="Preparing ownership map data." />
+    );
+  }
+
+  if (
+    view === "work" &&
+    episodeId &&
+    !map.workEpisodes.some((episode) => episode.id === episodeId)
+  ) {
+    return (
+      <NitroMapStatusState
+        title="Episode unavailable"
+        detail="This work episode is not present in the project map."
+      />
     );
   }
 
@@ -174,7 +232,20 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
                 <NitroMapCanvas map={map} selection={selection} onSelect={setSelection} />
               ) : null}
               {view === "work" ? (
-                <NitroWorkPanel map={map} selection={selection} onSelect={setSelection} />
+                <NitroWorkPanel
+                  map={map}
+                  selection={selection}
+                  onSelect={setSelection}
+                  onSelectEpisodeRoute={(selectedEpisodeId) => {
+                    void navigate({
+                      to: "/projects/$environmentId/$projectId/work/$episodeId",
+                      params: {
+                        ...routeParams,
+                        episodeId: selectedEpisodeId,
+                      },
+                    });
+                  }}
+                />
               ) : null}
             </main>
             <NitroInspectorPanel inspection={inspection} />

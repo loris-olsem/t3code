@@ -18,6 +18,8 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = () => new Date().toISOString();
+const nitroWorkDetailRoutePattern =
+  /^\/projects\/[^/()\s]+\/[^/()\s]+\/work\/(?<episodeId>[^/()\s]+)$/;
 const defaultMetadata: Omit<OrchestrationEvent, "sequence" | "type" | "payload"> = {
   eventId: crypto.randomUUID() as OrchestrationEvent["eventId"],
   aggregateKind: "thread",
@@ -447,6 +449,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       return [userMessageEvent, turnStartRequestedEvent];
+    }
+
+    case "thread.nitro-round.complete": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const routeMatch = nitroWorkDetailRoutePattern.exec(command.workDetailRoute);
+      if (routeMatch?.groups?.episodeId !== encodeURIComponent(command.episodeId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Nitro work detail route must be an internal project work route.",
+        });
+      }
+      const resultText =
+        command.status === "completed"
+          ? `Nitro round ${command.roundIndex} completed. [Open episode details](${command.workDetailRoute}).`
+          : command.status === "aborted"
+            ? `Nitro round ${command.roundIndex} was aborted. [Open episode details](${command.workDetailRoute}).`
+            : `Nitro round ${command.roundIndex} failed. [Open episode details](${command.workDetailRoute}).`;
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: "system",
+          text: resultText,
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
     }
 
     case "thread.turn.interrupt": {

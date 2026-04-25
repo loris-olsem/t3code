@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime";
-import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EnvironmentState, useStore } from "../store";
 import { type Thread } from "../types";
@@ -9,14 +9,56 @@ import {
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveNitroSubmitState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
+  resolveNitroEpisodeCompletion,
   resolveSendEnvMode,
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import type { NitroWorkEpisodeSummary } from "../nitromap/types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+const nitroEpisodeCreatedAt = "2026-04-25T10:00:00.000Z";
+const makeNitroEpisode = (
+  input: Partial<NitroWorkEpisodeSummary> = {},
+): NitroWorkEpisodeSummary => ({
+  id: "episode-1",
+  environmentId: localEnvironmentId,
+  projectId: ProjectId.make("project-1"),
+  conversationThreadId: ThreadId.make("thread-1"),
+  startedFromMessageId: MessageId.make("message-1"),
+  mainAgent: {
+    label: "Conversation main agent",
+    status: "working",
+  },
+  title: "Episode 1",
+  status: "running",
+  backingThreadId: ThreadId.make("thread-1"),
+  transcriptRoute: "/environment-local/thread-1",
+  latestUserMessage: "build this",
+  blockingItems: [],
+  rounds: [
+    {
+      id: "round-1",
+      episodeId: "episode-1",
+      index: 1,
+      title: "Nitro round",
+      status: "running",
+      startedByUserMessage: "build this",
+      resultMessageId: null,
+      startedAt: nitroEpisodeCreatedAt,
+      completedAt: null,
+      traces: [],
+      invocations: [],
+    },
+  ],
+  createdAt: nitroEpisodeCreatedAt,
+  updatedAt: nitroEpisodeCreatedAt,
+  ...input,
+});
 
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
@@ -64,6 +106,81 @@ describe("deriveComposerSendState", () => {
     expect(state.trimmedPrompt).toBe("yoo  waddup");
     expect(state.expiredTerminalContextCount).toBe(1);
     expect(state.hasSendableContent).toBe(true);
+  });
+});
+
+describe("deriveNitroSubmitState", () => {
+  it("keeps regular submit enabled until the conversation has a running Nitro episode", () => {
+    expect(
+      deriveNitroSubmitState({
+        hasProjectMap: true,
+        hasRunningEpisode: false,
+      }),
+    ).toEqual({
+      regularSubmitDisabled: false,
+      nitroDisabledReason: null,
+    });
+  });
+
+  it("blocks regular submit and Nitro while a Nitro episode is running", () => {
+    expect(
+      deriveNitroSubmitState({
+        hasProjectMap: true,
+        hasRunningEpisode: true,
+      }),
+    ).toEqual({
+      regularSubmitDisabled: true,
+      nitroDisabledReason: "A Nitro episode is already running for this conversation.",
+    });
+  });
+
+  it("disables only Nitro when the project map has not been produced yet", () => {
+    expect(
+      deriveNitroSubmitState({
+        hasProjectMap: false,
+        hasRunningEpisode: false,
+      }),
+    ).toEqual({
+      regularSubmitDisabled: false,
+      nitroDisabledReason: "Run the Cartographer before starting a Nitro episode.",
+    });
+  });
+});
+
+describe("resolveNitroEpisodeCompletion", () => {
+  it("does not complete a new Nitro episode from an older completed turn", () => {
+    expect(
+      resolveNitroEpisodeCompletion({
+        episode: makeNitroEpisode(),
+        latestTurn: {
+          turnId: TurnId.make("turn-old"),
+          state: "completed",
+          requestedAt: "2026-04-25T09:59:00.000Z",
+          startedAt: "2026-04-25T09:59:01.000Z",
+          completedAt: "2026-04-25T09:59:30.000Z",
+          assistantMessageId: MessageId.make("assistant-old"),
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("completes only the turn requested by the Nitro episode", () => {
+    expect(
+      resolveNitroEpisodeCompletion({
+        episode: makeNitroEpisode(),
+        latestTurn: {
+          turnId: TurnId.make("turn-nitro"),
+          state: "completed",
+          requestedAt: nitroEpisodeCreatedAt,
+          startedAt: "2026-04-25T10:00:01.000Z",
+          completedAt: "2026-04-25T10:00:30.000Z",
+          assistantMessageId: MessageId.make("assistant-nitro"),
+        },
+      }),
+    ).toEqual({
+      status: "completed",
+      completedAt: "2026-04-25T10:00:30.000Z",
+    });
   });
 });
 

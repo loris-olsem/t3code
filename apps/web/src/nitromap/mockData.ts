@@ -1,9 +1,13 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 
 import type { NitroMapDataSource, NitroProjectMap, NitroMapRouteParams } from "./types";
 
 function scopedId(scope: string, suffix: string): string {
   return `${scope}:${suffix}`;
+}
+
+function scopedThreadId(scope: string, suffix: string): ThreadId {
+  return scopedId(scope, suffix) as ThreadId;
 }
 
 export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProjectMap {
@@ -227,6 +231,8 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         id: activeEpisodeId,
         environmentId: params.environmentId,
         projectId: params.projectId,
+        conversationThreadId: scopedThreadId(scope, "thread-active"),
+        startedFromMessageId: scopedId(scope, "message-active-start"),
         mainAgent: {
           label: "Conversation main agent",
           status: "working",
@@ -353,6 +359,8 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         id: scopedId(scope, "episode-docs"),
         environmentId: params.environmentId,
         projectId: params.projectId,
+        conversationThreadId: scopedThreadId(scope, "thread-docs"),
+        startedFromMessageId: scopedId(scope, "message-docs-start"),
         mainAgent: {
           label: "Conversation main agent",
           status: "completed",
@@ -372,6 +380,8 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         id: scopedId(scope, "episode-blocked"),
         environmentId: params.environmentId,
         projectId: params.projectId,
+        conversationThreadId: scopedThreadId(scope, "thread-blocked"),
+        startedFromMessageId: scopedId(scope, "message-blocked-start"),
         mainAgent: {
           label: "Conversation main agent",
           status: "waiting",
@@ -410,6 +420,8 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         id: scopedId(scope, "episode-failed"),
         environmentId: params.environmentId,
         projectId: params.projectId,
+        conversationThreadId: scopedThreadId(scope, "thread-failed"),
+        startedFromMessageId: scopedId(scope, "message-failed-start"),
         mainAgent: {
           label: "Conversation main agent",
           status: "failed",
@@ -477,7 +489,10 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
   };
 }
 
+const mockProjectIdsWithoutNitroMap = new Set<string>(["project-without-nitro-map"]);
+
 export const mockNitroMapDataSource: NitroMapDataSource = {
+  hasProjectMap: (params) => !mockProjectIdsWithoutNitroMap.has(params.projectId),
   getProjectMap: async (params) => buildMockNitroProjectMap(params),
 };
 
