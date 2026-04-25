@@ -10,6 +10,7 @@ import type {
   NitroWorkEpisodeSummary,
   NitroWorkRoundSummary,
 } from "../types";
+import { DirectionalSvgEdge } from "./DirectionalSvgEdge";
 
 export function NitroWorkPanel(props: {
   map: NitroProjectMap;
@@ -211,15 +212,16 @@ function RoundTraceGraph(props: {
           const parent = findInvocation(round, invocation.parentInvocationId);
           if (!parent) return null;
           return (
-            <line
+            <DirectionalSvgEdge
               key={`${parent.id}:${invocation.id}`}
+              id={`${parent.id}:${invocation.id}`}
               x1={parent.position.x}
               y1={parent.position.y}
               x2={invocation.position.x}
               y2={invocation.position.y}
               className="stroke-primary/45"
+              arrowClassName="fill-primary/70"
               strokeWidth={0.36}
-              strokeLinecap="round"
             />
           );
         })}

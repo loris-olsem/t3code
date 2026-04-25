@@ -3,6 +3,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 
 import { cn } from "~/lib/utils";
 import type { NitroProjectMap, NitroSelectionTarget } from "../types";
+import { DirectionalSvgEdge } from "./DirectionalSvgEdge";
 
 interface NitroMapCanvasProps {
   map: NitroProjectMap;
@@ -34,30 +35,6 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
         preserveAspectRatio="none"
         className="pointer-events-none absolute inset-0 size-full"
       >
-        <defs>
-          <marker
-            id="supervision-arrow"
-            markerHeight="5"
-            markerWidth="5"
-            orient="auto"
-            refX="4"
-            refY="2.5"
-            viewBox="0 0 5 5"
-          >
-            <path d="M0 0 L5 2.5 L0 5 Z" className="fill-muted-foreground/55" />
-          </marker>
-          <marker
-            id="supervision-arrow-active"
-            markerHeight="5"
-            markerWidth="5"
-            orient="auto"
-            refX="4"
-            refY="2.5"
-            viewBox="0 0 5 5"
-          >
-            <path d="M0 0 L5 2.5 L0 5 Z" className="fill-primary" />
-          </marker>
-        </defs>
         {visibleEdges.supervision
           ? map.supervisionEdges.map((edge) => {
               const parent = agentById.get(edge.parentAgentId);
@@ -65,16 +42,16 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
               if (!parent || !child) return null;
               const active = selection?.kind === "supervision-edge" && selection.id === edge.id;
               return (
-                <line
+                <DirectionalSvgEdge
                   key={edge.id}
+                  id={edge.id}
                   x1={parent.position.x}
                   y1={parent.position.y}
                   x2={child.position.x}
                   y2={child.position.y}
                   className={active ? "stroke-primary" : "stroke-muted-foreground/45"}
+                  arrowClassName={active ? "fill-primary" : "fill-muted-foreground/70"}
                   strokeWidth={active ? 0.55 : 0.28}
-                  strokeLinecap="round"
-                  markerEnd={active ? "url(#supervision-arrow-active)" : "url(#supervision-arrow)"}
                 />
               );
             })
