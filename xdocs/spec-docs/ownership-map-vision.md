@@ -836,20 +836,17 @@ The new first-order surfaces are:
 - project list or project switcher
 - ownership map
 - active work episode
-- agent details
-- scope details
-- intervention stream
 - map recomputation and reconciliation actions
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
-The active work episode can still include a conversational transcript, but it should not dominate the product. It is one panel or mode inside the map-driven workspace.
+The active work episode can still include a conversational transcript, but it should not dominate the product. Work should be organized as episodes and rounds. A user message to a project conversation starts an episode or starts the next round in an existing episode. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread.
 
 ## UI Concept Direction
 
 NitroMap should feel like an operational project map, not a chat product with extra panels.
 
-The default project screen should make the ownership map the dominant surface. A compact left navigation can switch between projects, map, work, Map Maintenance, agents, and activity, but the center of gravity is the map canvas. The user should arrive in a project and immediately see the important owned resources, which agents own them, where responsibility overlaps, and what work is active.
+The default project screen should make the ownership map the dominant surface. A compact left navigation can switch between projects, Map, Work, and Map Maintenance, but the center of gravity is the map canvas. The user should arrive in a project and immediately see the important owned resources, which agents own them, where responsibility overlaps, and what work is active.
 
 The map canvas should render resources as legible visual nodes rather than as a plain filesystem tree. Useful node categories include:
 
@@ -871,7 +868,9 @@ The UI should support at least three inspection paths:
 - agent inspection: role, type, responsibilities, matched resources, recent interventions, and Cartographer rationale
 - ownership-change inspection: what the Cartographer changed, from whom, to whom, why, and when
 
-The active work episode should be compact. It should show the current request, active work state, involved agents, interventions, changed resources, approvals, and final outcome. It should not render a long chat transcript by default. NitroMap assumes users inspect details through the editor, diffs, resource panels, terminals, and map nodes when they need precision.
+The active work episode should be compact but explicit about rounds. It should show the current request, round status, involved concrete agent invocations, interventions, changed resources, approvals, and final outcome. It should not render a long chat transcript by default. NitroMap assumes users inspect details through the editor, diffs, resource panels, terminals, round trace graphs, and map nodes when they need precision.
+
+The Work surface should not be a generic activity stream. Activity that matters to the user should be attached to a work episode, a round, a trace, a concrete invocation, a blocker, or a map reconciliation action. A round trace graph should flow left to right from the first concrete agent invocation through any implementation and management agents it woke. This preserves causality and branching better than a flat line while still being scoped to one round.
 
 Conversation history still exists, but it is not primary navigation. A project can have many conversations, and all conversations share the same ownership map and agent assignment. A conversation is a work episode over the project organization, not an isolated chat room with its own agent universe.
 
@@ -886,7 +885,7 @@ The Cartographer needs a separate, explicit surface. This should be exposed to u
 
 Map reconciliation actions should be visible as map diffs rather than buried in prose. The user should be able to see agents added, agents removed, responsibilities changed, query matches changed, and hierarchy changes.
 
-Interventions should appear in both the active work panel and the map. A warning from a build engineer should visually connect to the affected build resources. A test-owner intervention should connect to the relevant test nodes. This makes agent feedback spatially grounded and prevents the activity stream from becoming another chat log.
+Interventions should appear in the active work panel and, when spatially meaningful, the map. A warning from a build engineer should visually connect to the affected build resources. A test-owner intervention should connect to the relevant test nodes. This makes agent feedback spatially grounded and prevents a separate activity stream from becoming another chat log.
 
 The map should prioritize usability across several dimensions:
 

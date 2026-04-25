@@ -1,6 +1,6 @@
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 
-export type NitroMapView = "map" | "work" | "map-maintenance" | "agents" | "activity";
+export type NitroMapView = "map" | "work" | "map-maintenance";
 
 export type NitroAgentKind = "management" | "implementation";
 
@@ -42,8 +42,6 @@ export interface NitroProjectMap {
   responsibilities: NitroResponsibility[];
   ownershipEdges: NitroOwnershipEdge[];
   workEpisodes: NitroWorkEpisodeSummary[];
-  traces: NitroOwnershipTrace[];
-  interventions: NitroIntervention[];
   maintenance: NitroMapMaintenanceSummary;
 }
 
@@ -126,8 +124,23 @@ export interface NitroWorkEpisodeSummary {
   transcriptRoute: string | null;
   latestUserMessage: string;
   blockingItems: NitroWorkEpisodeBlockingItem[];
+  rounds: NitroWorkRoundSummary[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NitroWorkRoundSummary {
+  id: string;
+  episodeId: string;
+  index: number;
+  title: string;
+  status: "running" | "waiting" | "blocked" | "aborted" | "failed" | "completed";
+  startedByUserMessage: string;
+  resultMessageId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  traces: NitroRoundTrace[];
+  invocations: NitroAgentInvocation[];
 }
 
 export interface NitroWorkEpisodeBlockingItem {
@@ -153,23 +166,32 @@ export interface NitroWorkEpisodeAction {
   disabled: boolean;
 }
 
-export interface NitroOwnershipTrace {
+export interface NitroRoundTrace {
   id: string;
-  episodeId: string;
-  agentId: string;
+  roundId: string;
   status: NitroOwnershipTraceStatus;
   title: string;
   summary: string;
+  rootInvocationId: string;
+  invocationIds: string[];
   insertedAt: string | null;
 }
 
-export interface NitroIntervention {
+export interface NitroAgentInvocation {
   id: string;
-  targetId: string;
-  targetKind: "agent" | "work-episode";
-  status: NitroInterventionStatus;
-  title: string;
-  requestedBy: string;
+  roundId: string;
+  traceId: string;
+  agentId: string;
+  parentInvocationId: string | null;
+  trigger: "file-match" | "supervision-response" | "manual";
+  status: "queued" | "running" | "responded" | "no-response" | "failed" | "aborted";
+  summary: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  position: {
+    x: number;
+    y: number;
+  };
 }
 
 export interface NitroMapMaintenanceSummary {
@@ -194,6 +216,7 @@ export type NitroSelectionTarget =
   | { kind: "supervision-edge"; id: string }
   | { kind: "ownership-edge"; id: string }
   | { kind: "work-episode"; id: string }
-  | { kind: "trace"; id: string }
-  | { kind: "intervention"; id: string }
+  | { kind: "work-round"; id: string }
+  | { kind: "round-trace"; id: string }
+  | { kind: "agent-invocation"; id: string }
   | { kind: "reconciliation-action"; id: string };

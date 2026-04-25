@@ -24,7 +24,6 @@ describe("nitromap selectors", () => {
       resourceCount: 4,
       runningWorkEpisodeCount: 1,
       pendingTraceCount: 1,
-      openInterventionCount: 1,
       proposedMaintenanceActionCount: 1,
     });
   });
@@ -103,12 +102,40 @@ describe("nitromap selectors", () => {
     ]);
   });
 
+  it("models episode rounds with concrete agent invocation graphs", () => {
+    const episode = map.workEpisodes.find((entry) => entry.status === "running");
+    const runningRound = episode?.rounds.find((round) => round.status === "running");
+
+    expect(runningRound?.traces[0]).toMatchObject({
+      status: "pending",
+      invocationIds: expect.arrayContaining([expect.stringContaining("invocation-runtime")]),
+    });
+    expect(runningRound?.invocations.some((invocation) => invocation.parentInvocationId)).toBe(
+      true,
+    );
+  });
+
+  it("inspects a concrete invocation with its round and trace context", () => {
+    const invocation = map.workEpisodes[0]?.rounds[0]?.invocations[0];
+    const inspection = selectNitroMapInspection(
+      map,
+      invocation ? { kind: "agent-invocation", id: invocation.id } : null,
+    );
+
+    expect(inspection?.kind).toBe("agent-invocation");
+    if (inspection?.kind !== "agent-invocation") return;
+    expect(inspection.agent?.kind).toBe("implementation");
+    expect(inspection.round?.index).toBe(1);
+    expect(inspection.trace?.status).toBe("injected");
+  });
+
   it("keeps Cartographer and user-facing main agents outside the ownership-agent graph", () => {
     expect(map.agents.some((agent) => agent.label === map.maintenance.cartographerLabel)).toBe(
       false,
     );
     expect(map.agents.some((agent) => agent.label === "Conversation main agent")).toBe(false);
     expect(map.workEpisodes[0]?.mainAgent.label).toBe("Conversation main agent");
+    expect(map.workEpisodes[0]?.rounds.length).toBeGreaterThan(0);
 
     const actionInspection = selectNitroMapInspection(map, {
       kind: "reconciliation-action",

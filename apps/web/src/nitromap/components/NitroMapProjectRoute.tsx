@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ActivityIcon, BotIcon, MapIcon, NetworkIcon, WrenchIcon } from "lucide-react";
+import { ActivityIcon, NetworkIcon, WrenchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { SidebarInset } from "~/components/ui/sidebar";
@@ -29,16 +29,12 @@ const VIEW_LABELS: Record<NitroMapView, string> = {
   map: "Map",
   work: "Work",
   "map-maintenance": "Map Maintenance",
-  agents: "Agents",
-  activity: "Activity",
 };
 
 const VIEW_ICONS = {
   map: NetworkIcon,
   work: ActivityIcon,
   "map-maintenance": WrenchIcon,
-  agents: BotIcon,
-  activity: MapIcon,
 } satisfies Record<NitroMapView, typeof ActivityIcon>;
 
 export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view: NitroMapView }) {
@@ -136,7 +132,7 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
           <div className="hidden gap-2 text-xs text-muted-foreground lg:flex">
             <span>{counts.agentCount} agents</span>
             <span>{counts.resourceCount} resources</span>
-            <span>{counts.pendingTraceCount} pending traces</span>
+            <span>{counts.pendingTraceCount} pending round traces</span>
           </div>
         </header>
 
@@ -177,9 +173,9 @@ export function NitroMapProjectRoute(props: { params: NitroMapRouteParams; view:
               {view === "map" ? (
                 <NitroMapCanvas map={map} selection={selection} onSelect={setSelection} />
               ) : null}
-              {view === "work" ? <NitroWorkPanel map={map} onSelect={setSelection} /> : null}
-              {view === "agents" ? <AgentListPanel map={map} onSelect={setSelection} /> : null}
-              {view === "activity" ? <ActivityPanel map={map} onSelect={setSelection} /> : null}
+              {view === "work" ? (
+                <NitroWorkPanel map={map} selection={selection} onSelect={setSelection} />
+              ) : null}
             </main>
             <NitroInspectorPanel inspection={inspection} />
           </div>
@@ -199,86 +195,5 @@ function NitroMapStatusState(props: { title: string; detail: string }) {
         </section>
       </div>
     </SidebarInset>
-  );
-}
-
-function AgentListPanel(props: {
-  map: NitroProjectMap;
-  onSelect: (selection: NitroSelectionTarget) => void;
-}) {
-  return (
-    <section className="flex min-h-0 flex-1 flex-col bg-card">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Agents</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Project agents using the shared ownership map
-        </p>
-      </div>
-      <div className="grid flex-1 content-start gap-2 overflow-auto p-3 md:grid-cols-3">
-        {props.map.agents.map((agent) => (
-          <button
-            key={agent.id}
-            type="button"
-            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-            onClick={() => props.onSelect({ kind: "agent", id: agent.id })}
-          >
-            <span className="block truncate text-xs font-medium text-foreground">
-              {agent.label}
-            </span>
-            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-              {agent.kind} / {agent.status}
-            </span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ActivityPanel(props: {
-  map: NitroProjectMap;
-  onSelect: (selection: NitroSelectionTarget) => void;
-}) {
-  return (
-    <section className="flex min-h-0 flex-1 flex-col bg-card">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Activity</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Trace messages and abortable user interventions
-        </p>
-      </div>
-      <div className="grid flex-1 content-start gap-2 overflow-auto p-3 md:grid-cols-2">
-        {props.map.traces.map((trace) => (
-          <button
-            key={trace.id}
-            type="button"
-            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-            onClick={() => props.onSelect({ kind: "trace", id: trace.id })}
-          >
-            <span className="block truncate text-xs font-medium text-foreground">
-              {trace.title}
-            </span>
-            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-              {trace.status}
-            </span>
-          </button>
-        ))}
-        {props.map.interventions.map((intervention) => (
-          <button
-            key={intervention.id}
-            type="button"
-            className="rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-accent"
-            onClick={() => props.onSelect({ kind: "intervention", id: intervention.id })}
-          >
-            <span className="block truncate text-xs font-medium text-foreground">
-              {intervention.title}
-            </span>
-            <span className="mt-1 block truncate text-[10px] uppercase text-muted-foreground">
-              {intervention.status}
-            </span>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }

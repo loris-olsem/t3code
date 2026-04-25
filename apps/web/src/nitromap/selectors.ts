@@ -1,14 +1,16 @@
 import type {
+  NitroAgentInvocation,
   NitroMapReconciliationAction,
   NitroOwnershipAgent,
   NitroOwnershipEdge,
-  NitroOwnershipTrace,
   NitroProjectMap,
+  NitroRoundTrace,
   NitroResource,
   NitroResponsibility,
   NitroSelectionTarget,
   NitroSupervisionEdge,
   NitroWorkEpisodeSummary,
+  NitroWorkRoundSummary,
 } from "./types";
 
 export type NitroInspection =
@@ -33,14 +35,26 @@ export type NitroInspection =
       agent: NitroOwnershipAgent | null;
       resource: NitroResource | null;
     }
-  | { kind: "work-episode"; episode: NitroWorkEpisodeSummary; traces: NitroOwnershipTrace[] }
+  | { kind: "work-episode"; episode: NitroWorkEpisodeSummary; rounds: NitroWorkRoundSummary[] }
   | {
-      kind: "trace";
-      trace: NitroOwnershipTrace;
+      kind: "work-round";
       episode: NitroWorkEpisodeSummary | null;
-      agent: NitroOwnershipAgent | null;
+      round: NitroWorkRoundSummary;
     }
-  | { kind: "intervention"; intervention: NitroProjectMap["interventions"][number] }
+  | {
+      kind: "round-trace";
+      trace: NitroRoundTrace;
+      round: NitroWorkRoundSummary | null;
+      episode: NitroWorkEpisodeSummary | null;
+      invocations: NitroAgentInvocation[];
+    }
+  | {
+      kind: "agent-invocation";
+      invocation: NitroAgentInvocation;
+      agent: NitroOwnershipAgent | null;
+      round: NitroWorkRoundSummary | null;
+      trace: NitroRoundTrace | null;
+    }
   | { kind: "reconciliation-action"; action: NitroMapReconciliationAction };
 
 export interface NitroMapCounts {
@@ -50,7 +64,6 @@ export interface NitroMapCounts {
   resourceCount: number;
   runningWorkEpisodeCount: number;
   pendingTraceCount: number;
-  openInterventionCount: number;
   proposedMaintenanceActionCount: number;
 }
 
@@ -62,10 +75,10 @@ export function selectNitroMapCounts(map: NitroProjectMap): NitroMapCounts {
     resourceCount: map.resources.length,
     runningWorkEpisodeCount: map.workEpisodes.filter((episode) => episode.status === "running")
       .length,
-    pendingTraceCount: map.traces.filter((trace) => trace.status === "pending").length,
-    openInterventionCount: map.interventions.filter(
-      (intervention) => intervention.status === "open",
-    ).length,
+    pendingTraceCount: map.workEpisodes
+      .flatMap((episode) => episode.rounds)
+      .flatMap((round) => round.traces)
+      .filter((trace) => trace.status === "pending").length,
     proposedMaintenanceActionCount: map.maintenance.actions.filter(
       (action) => action.status === "proposed",
     ).length,
@@ -168,28 +181,104 @@ export function selectNitroMapInspection(
       return {
         kind: "work-episode",
         episode,
-        traces: map.traces.filter((trace) => trace.episodeId === episode.id),
+        rounds: episode.rounds,
       };
     }
-    case "trace": {
-      const trace = map.traces.find((entry) => entry.id === selection.id);
-      if (!trace) return null;
+    case "work-round": {
+      const match = findRoundContext(map, selection.id);
+      if (!match) return null;
       return {
-        kind: "trace",
-        trace,
-        agent: map.agents.find((agent) => agent.id === trace.agentId) ?? null,
-        episode: map.workEpisodes.find((episode) => episode.id === trace.episodeId) ?? null,
+        kind: "work-round",
+        episode: match.episode,
+        round: match.round,
       };
     }
-    case "intervention": {
-      const intervention = map.interventions.find((entry) => entry.id === selection.id);
-      return intervention ? { kind: "intervention", intervention } : null;
+    case "round-trace": {
+      const match = findTraceContext(map, selection.id);
+      if (!match) return null;
+      return {
+        kind: "round-trace",
+        episode: match.episode,
+        round: match.round,
+        trace: match.trace,
+        invocations: match.round.invocations.filter((invocation) =>
+          match.trace.invocationIds.includes(invocation.id),
+        ),
+      };
+    }
+    case "agent-invocation": {
+      const match = findInvocationContext(map, selection.id);
+      if (!match) return null;
+      return {
+        kind: "agent-invocation",
+        invocation: match.invocation,
+        agent: map.agents.find((agent) => agent.id === match.invocation.agentId) ?? null,
+        round: match.round,
+        trace: match.trace,
+      };
     }
     case "reconciliation-action": {
       const action = map.maintenance.actions.find((entry) => entry.id === selection.id);
       return action ? { kind: "reconciliation-action", action } : null;
     }
   }
+}
+
+function findRoundContext(
+  map: NitroProjectMap,
+  roundId: string,
+): { episode: NitroWorkEpisodeSummary; round: NitroWorkRoundSummary } | null {
+  for (const episode of map.workEpisodes) {
+    const round = episode.rounds.find((entry) => entry.id === roundId);
+    if (round) {
+      return { episode, round };
+    }
+  }
+  return null;
+}
+
+function findTraceContext(
+  map: NitroProjectMap,
+  traceId: string,
+): {
+  episode: NitroWorkEpisodeSummary;
+  round: NitroWorkRoundSummary;
+  trace: NitroRoundTrace;
+} | null {
+  for (const episode of map.workEpisodes) {
+    for (const round of episode.rounds) {
+      const trace = round.traces.find((entry) => entry.id === traceId);
+      if (trace) {
+        return { episode, round, trace };
+      }
+    }
+  }
+  return null;
+}
+
+function findInvocationContext(
+  map: NitroProjectMap,
+  invocationId: string,
+): {
+  episode: NitroWorkEpisodeSummary;
+  round: NitroWorkRoundSummary;
+  trace: NitroRoundTrace | null;
+  invocation: NitroAgentInvocation;
+} | null {
+  for (const episode of map.workEpisodes) {
+    for (const round of episode.rounds) {
+      const invocation = round.invocations.find((entry) => entry.id === invocationId);
+      if (invocation) {
+        return {
+          episode,
+          round,
+          invocation,
+          trace: round.traces.find((trace) => trace.id === invocation.traceId) ?? null,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export function isNitroSelectionEqual(

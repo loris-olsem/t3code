@@ -22,6 +22,14 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
   const ownershipResponsibilityId = scopedId(scope, "responsibility-ownership");
   const traceResponsibilityId = scopedId(scope, "responsibility-traces");
   const activeEpisodeId = scopedId(scope, "episode-active");
+  const activeRoundOneId = scopedId(scope, "round-active-1");
+  const activeRoundTwoId = scopedId(scope, "round-active-2");
+  const uiTraceId = scopedId(scope, "trace-ui-round-1");
+  const runtimeTraceId = scopedId(scope, "trace-runtime-round-2");
+  const uiInvocationId = scopedId(scope, "invocation-ui-round-1");
+  const platformInvocationId = scopedId(scope, "invocation-platform-round-1");
+  const runtimeInvocationId = scopedId(scope, "invocation-runtime-round-2");
+  const mapInvocationId = scopedId(scope, "invocation-map-round-2");
 
   return {
     project: {
@@ -230,6 +238,114 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         latestUserMessage:
           "Implement the basic UI, mock data, routes, and tests before the full Cartographer.",
         blockingItems: [],
+        rounds: [
+          {
+            id: activeRoundOneId,
+            episodeId: activeEpisodeId,
+            index: 1,
+            title: "Map shell implementation",
+            status: "completed",
+            startedByUserMessage:
+              "Implement the basic UI, mock data, routes, and tests before the full Cartographer.",
+            resultMessageId: scopedId(scope, "message-round-1-result"),
+            startedAt: "2026-04-25T09:30:00.000Z",
+            completedAt: "2026-04-25T09:38:00.000Z",
+            traces: [
+              {
+                id: uiTraceId,
+                roundId: activeRoundOneId,
+                status: "injected",
+                title: "UI implementation trace",
+                summary:
+                  "UI owner reviewed route and canvas changes; platform manager checked project-shell coherence.",
+                rootInvocationId: uiInvocationId,
+                invocationIds: [uiInvocationId, platformInvocationId],
+                insertedAt: "2026-04-25T09:38:00.000Z",
+              },
+            ],
+            invocations: [
+              {
+                id: uiInvocationId,
+                roundId: activeRoundOneId,
+                traceId: uiTraceId,
+                agentId: uiImplementorId,
+                parentInvocationId: null,
+                trigger: "file-match",
+                status: "responded",
+                summary: "Reviewed NitroMap route, canvas, and inspector files.",
+                startedAt: "2026-04-25T09:34:00.000Z",
+                completedAt: "2026-04-25T09:36:00.000Z",
+                position: { x: 18, y: 50 },
+              },
+              {
+                id: platformInvocationId,
+                roundId: activeRoundOneId,
+                traceId: uiTraceId,
+                agentId: platformManagerId,
+                parentInvocationId: uiInvocationId,
+                trigger: "supervision-response",
+                status: "responded",
+                summary: "Confirmed the work stays project-scoped and avoids thread identity.",
+                startedAt: "2026-04-25T09:36:00.000Z",
+                completedAt: "2026-04-25T09:38:00.000Z",
+                position: { x: 64, y: 42 },
+              },
+            ],
+          },
+          {
+            id: activeRoundTwoId,
+            episodeId: activeEpisodeId,
+            index: 2,
+            title: "Trace and abort semantics",
+            status: "running",
+            startedByUserMessage:
+              "Clarify that the user should not need to coordinate traces manually, while abort remains available.",
+            resultMessageId: null,
+            startedAt: "2026-04-25T09:41:00.000Z",
+            completedAt: null,
+            traces: [
+              {
+                id: runtimeTraceId,
+                roundId: activeRoundTwoId,
+                status: "pending",
+                title: "Runtime trace insertion",
+                summary:
+                  "Runtime owner is checking how pending trace context and abort state should return to the main thread.",
+                rootInvocationId: runtimeInvocationId,
+                invocationIds: [runtimeInvocationId, mapInvocationId],
+                insertedAt: null,
+              },
+            ],
+            invocations: [
+              {
+                id: runtimeInvocationId,
+                roundId: activeRoundTwoId,
+                traceId: runtimeTraceId,
+                agentId: runtimeImplementorId,
+                parentInvocationId: null,
+                trigger: "file-match",
+                status: "running",
+                summary: "Inspecting trace insertion and abort lifecycle behavior.",
+                startedAt: "2026-04-25T09:42:00.000Z",
+                completedAt: null,
+                position: { x: 18, y: 58 },
+              },
+              {
+                id: mapInvocationId,
+                roundId: activeRoundTwoId,
+                traceId: runtimeTraceId,
+                agentId: mapManagerId,
+                parentInvocationId: runtimeInvocationId,
+                trigger: "supervision-response",
+                status: "queued",
+                summary: "Waiting to review whether the round changes ownership-map semantics.",
+                startedAt: null,
+                completedAt: null,
+                position: { x: 64, y: 50 },
+              },
+            ],
+          },
+        ],
         createdAt: "2026-04-25T09:30:00.000Z",
         updatedAt: "2026-04-25T09:40:00.000Z",
       },
@@ -248,6 +364,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         latestUserMessage:
           "Clarify Cartographer, supervision edges, traces, and shared project map.",
         blockingItems: [],
+        rounds: [],
         createdAt: "2026-04-25T07:40:00.000Z",
         updatedAt: "2026-04-25T08:10:00.000Z",
       },
@@ -285,6 +402,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
             ],
           },
         ],
+        rounds: [],
         createdAt: "2026-04-25T08:20:00.000Z",
         updatedAt: "2026-04-25T08:50:00.000Z",
       },
@@ -327,46 +445,9 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
             ],
           },
         ],
+        rounds: [],
         createdAt: "2026-04-25T08:55:00.000Z",
         updatedAt: "2026-04-25T09:00:00.000Z",
-      },
-    ],
-    traces: [
-      {
-        id: scopedId(scope, "trace-ui"),
-        episodeId: activeEpisodeId,
-        agentId: uiImplementorId,
-        status: "injected",
-        title: "UI implementor returned route/canvas context",
-        summary: "The main agent receives this as thread context instead of asking the user.",
-        insertedAt: "2026-04-25T09:45:00.000Z",
-      },
-      {
-        id: scopedId(scope, "trace-runtime"),
-        episodeId: activeEpisodeId,
-        agentId: runtimeImplementorId,
-        status: "pending",
-        title: "Runtime implementor watching abort semantics",
-        summary: "Pending trace is visible so the user can abort the current turn if needed.",
-        insertedAt: null,
-      },
-    ],
-    interventions: [
-      {
-        id: scopedId(scope, "intervention-active"),
-        targetId: activeEpisodeId,
-        targetKind: "work-episode",
-        status: "open",
-        title: "Abort action is represented but not wired in the mock surface",
-        requestedBy: "User",
-      },
-      {
-        id: scopedId(scope, "intervention-manager"),
-        targetId: platformManagerId,
-        targetKind: "agent",
-        status: "accepted",
-        title: "Management agent supervises multiple children",
-        requestedBy: "Cartographer",
       },
     ],
     maintenance: {

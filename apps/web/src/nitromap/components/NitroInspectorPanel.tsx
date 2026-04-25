@@ -106,6 +106,7 @@ export function NitroInspectorPanel(props: { inspection: NitroInspection | null 
               value={`${inspection.episode.mainAgent.label} (${inspection.episode.mainAgent.status})`}
             />
             <Row label="Latest user message" value={inspection.episode.latestUserMessage} />
+            <Row label="Rounds" value={String(inspection.rounds.length)} />
             <Row
               label="Blocking"
               value={
@@ -114,31 +115,51 @@ export function NitroInspectorPanel(props: { inspection: NitroInspection | null 
                   : "None"
               }
             />
+          </dl>
+        ) : null}
+        {inspection?.kind === "work-round" ? (
+          <dl className="space-y-3">
             <Row
-              label="Trace context"
+              label="Round"
+              value={`Round ${inspection.round.index}: ${inspection.round.title}`}
+            />
+            <Row label="Status" value={inspection.round.status} />
+            <Row label="Episode" value={inspection.episode?.title} />
+            <Row label="Started by" value={inspection.round.startedByUserMessage} />
+            <Row
+              label="Result message"
+              value={inspection.round.resultMessageId ?? "Not posted yet"}
+            />
+            <Row label="Traces" value={String(inspection.round.traces.length)} />
+            <Row label="Invocations" value={String(inspection.round.invocations.length)} />
+          </dl>
+        ) : null}
+        {inspection?.kind === "round-trace" ? (
+          <dl className="space-y-3">
+            <Row label="Trace" value={inspection.trace.title} />
+            <Row label="Status" value={inspection.trace.status} />
+            <Row label="Episode" value={inspection.episode?.title} />
+            <Row label="Round" value={inspection.round?.title} />
+            <Row label="Summary" value={inspection.trace.summary} />
+            <Row
+              label="Invocations"
               value={
-                inspection.traces.length > 0
-                  ? inspection.traces.map((trace) => `${trace.title} (${trace.status})`).join(", ")
-                  : "No traces"
+                inspection.invocations.length > 0
+                  ? inspection.invocations.map((invocation) => invocation.status).join(", ")
+                  : "None"
               }
             />
           </dl>
         ) : null}
-        {inspection?.kind === "trace" ? (
+        {inspection?.kind === "agent-invocation" ? (
           <dl className="space-y-3">
-            <Row label="Trace" value={inspection.trace.title} />
-            <Row label="Status" value={inspection.trace.status} />
-            <Row label="Agent" value={inspection.agent?.label} />
-            <Row label="Episode" value={inspection.episode?.title} />
-            <Row label="Summary" value={inspection.trace.summary} />
-          </dl>
-        ) : null}
-        {inspection?.kind === "intervention" ? (
-          <dl className="space-y-3">
-            <Row label="Intervention" value={inspection.intervention.title} />
-            <Row label="Status" value={inspection.intervention.status} />
-            <Row label="Target" value={inspection.intervention.targetKind} />
-            <Row label="Requested by" value={inspection.intervention.requestedBy} />
+            <Row label="Invocation" value={inspection.agent?.label} />
+            <Row label="Agent kind" value={inspection.agent?.kind} />
+            <Row label="Status" value={inspection.invocation.status} />
+            <Row label="Trigger" value={inspection.invocation.trigger} />
+            <Row label="Round" value={inspection.round?.title} />
+            <Row label="Trace" value={inspection.trace?.title} />
+            <Row label="Summary" value={inspection.invocation.summary} />
           </dl>
         ) : null}
         {inspection?.kind === "reconciliation-action" ? (

@@ -6,8 +6,6 @@ export const NITRO_MAP_ROUTE_BY_VIEW = {
   map: "/projects/$environmentId/$projectId/map",
   work: "/projects/$environmentId/$projectId/work",
   "map-maintenance": "/projects/$environmentId/$projectId/map-maintenance",
-  agents: "/projects/$environmentId/$projectId/agents",
-  activity: "/projects/$environmentId/$projectId/activity",
 } as const satisfies Record<NitroMapView, string>;
 
 export const DEFAULT_NITRO_MAP_VIEW: NitroMapView = "map";
