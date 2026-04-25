@@ -34,6 +34,30 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
         preserveAspectRatio="none"
         className="pointer-events-none absolute inset-0 size-full"
       >
+        <defs>
+          <marker
+            id="supervision-arrow"
+            markerHeight="5"
+            markerWidth="5"
+            orient="auto"
+            refX="4"
+            refY="2.5"
+            viewBox="0 0 5 5"
+          >
+            <path d="M0 0 L5 2.5 L0 5 Z" className="fill-muted-foreground/55" />
+          </marker>
+          <marker
+            id="supervision-arrow-active"
+            markerHeight="5"
+            markerWidth="5"
+            orient="auto"
+            refX="4"
+            refY="2.5"
+            viewBox="0 0 5 5"
+          >
+            <path d="M0 0 L5 2.5 L0 5 Z" className="fill-primary" />
+          </marker>
+        </defs>
         {visibleEdges.supervision
           ? map.supervisionEdges.map((edge) => {
               const parent = agentById.get(edge.parentAgentId);
@@ -50,6 +74,7 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
                   className={active ? "stroke-primary" : "stroke-muted-foreground/45"}
                   strokeWidth={active ? 0.55 : 0.28}
                   strokeLinecap="round"
+                  markerEnd={active ? "url(#supervision-arrow-active)" : "url(#supervision-arrow)"}
                 />
               );
             })
