@@ -2,6 +2,8 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -10,6 +12,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 
 import * as CodexClient from "./client.ts";
+import { makeInMemoryStdio } from "./_internal/stdio.ts";
+
+const encoder = new TextEncoder();
+
+const encodeJsonl = (value: unknown) => encoder.encode(`${JSON.stringify(value)}\n`);
 
 const mockPeerPath = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(import.meta.dirname, "../test/fixtures/codex-app-server-mock-peer.ts"),
@@ -149,6 +156,44 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       }).pipe(Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
 
       assert.equal(initialized.userAgent, "mock-codex-app-server");
+    }),
+  );
+
+  it.effect("accepts initialize responses without codexHome", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const scope = yield* Scope.make();
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+      const client = yield* CodexClient.make(stdio).pipe(Scope.provide(scope));
+
+      const pendingInitialize = yield* client
+        .request("initialize", {
+          clientInfo: {
+            name: "effect-codex-app-server-test",
+            title: "Effect Codex App Server Test",
+            version: "0.0.0",
+          },
+        })
+        .pipe(Effect.forkScoped);
+      assert.equal(JSON.parse(yield* Queue.take(output)).method, "initialize");
+
+      yield* Queue.offer(
+        input,
+        encodeJsonl({
+          id: 1,
+          result: {
+            userAgent: "codex-cli/0.116.0",
+            platformFamily: "windows",
+            platformOs: "windows",
+          },
+        }),
+      );
+
+      assert.deepEqual(yield* Fiber.join(pendingInitialize), {
+        userAgent: "codex-cli/0.116.0",
+        platformFamily: "windows",
+        platformOs: "windows",
+      });
     }),
   );
 });
