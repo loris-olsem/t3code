@@ -450,7 +450,7 @@ Batching at the user-facing agent's turn boundary is important. It prevents piec
 
 The project conversation has two submit paths. The regular submit path, including pressing Enter, sends an ordinary message to the user-facing main agent and does not start a Nitro work episode or ownership round by itself. The regular path is available only when no Nitro episode is running for that conversation. While a Nitro episode is running, ordinary submit should be blocked; the user can inspect Work details or abort the running episode instead.
 
-The Nitro submit path is an explicit user action that starts a new episode from the current prompt in the current conversation. That episode starts its first round and activates ownership-agent trace processing.
+The Nitro submit path is an explicit user action that starts a new episode from the current prompt in the current conversation. That episode starts its first round and activates ownership-agent trace processing. The composer should show a project-map icon adjacent to the Nitro button so the action is visually tied to the project ownership map. If the Cartographer has not yet produced an ownership map for the project, the Nitro button must be disabled and its hover text should tell the user to run the Cartographer first.
 
 The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
 
@@ -847,7 +847,7 @@ The new first-order surfaces are:
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
-The active work episode can link back to the conversation that launched it, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent when no Nitro episode is running, and they do not create episodes. The Nitro submit action starts a new episode from the current conversation prompt. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread as a compact `system` result message.
+The active work episode can link back to the conversation that launched it, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent when no Nitro episode is running, and they do not create episodes. The Nitro submit action starts a new episode from the current conversation prompt only after the project has an ownership map. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread as a compact `system` result message.
 
 ## UI Concept Direction
 

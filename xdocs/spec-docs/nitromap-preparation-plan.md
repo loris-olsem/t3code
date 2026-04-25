@@ -330,6 +330,8 @@ Work flow during preparation:
 - In Milestones 3-4, `Start work` is visible as a disabled, non-interactive affordance. It must not open a composer, create a mock episode, mutate state, call the adapter, or create/link threads.
 - Milestone 5 is the first milestone where Nitro submit may create/link backing execution state and dispatch `thread.turn.start` through the work-episode adapter.
 - In Milestone 5, episode creation comes from the Nitro composer button in the conversation, not from a second independent Work prompt flow. A Work-surface `Start work` affordance should route or focus the user toward the current conversation composer/Nitro path until a separate prompt design is intentionally specified.
+- The composer should display a project-map icon adjacent to the Nitro button. That icon is informational navigation/context, while the Nitro button remains the episode-start action.
+- Nitro submit requires a project ownership map. If the Cartographer has not yet run for the project, the Nitro button must be disabled and its hover text should tell the user to run the Cartographer first.
 - A successful Milestone 5 Nitro submit routes or deep-links to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active when opened, and shows the new work episode detail. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current route with a project-scoped error and no unrelated thread opens.
 - `/work` lists active, blocked, and recent episodes for the project.
 - `/work/$episodeId` shows compact work detail, blocking items, changed-resource summaries when available, and an open-transcript action only when `transcriptRoute` is non-null.
@@ -995,6 +997,8 @@ The e2e suite should protect product-level behavior rather than visual details. 
 - approval and user-input primary actions work from the work panel or drawer and keep the user on NitroMap routes unless transcript is explicitly chosen
 - diff and terminal actions open their NitroMap detail/drawer surfaces without routing through ChatView
 - `Start work` is disabled and non-interactive through Milestone 4; from Milestone 5 onward Nitro submit uses `NitroWorkEpisodeAdapter` and successful episode starts link to work detail
+- composer controls show a project-map icon adjacent to the Nitro button
+- Nitro submit is disabled before the project has a Cartographer-generated ownership map, with hover text directing the user to run the Cartographer
 - mobile layout exposes map/list, work, and Map Maintenance without losing blocking work visibility
 - offline or reconnecting state keeps the last known map visible with a status indicator
 - missing project and unavailable map states show project-scoped fallbacks and do not open unrelated threads
@@ -1007,7 +1011,7 @@ Minimum e2e gates by milestone:
 
 - Milestone 3: direct project map route smoke test proving the route is reachable from navigation, uses the NitroMap route branch, and does not render the thread sidebar as the project shell.
 - Milestone 4: direct map route smoke test, route/layout test, primary nav route test for Map/Work/Map Maintenance from each Milestone 4 NitroMap source surface, mocked project-switch preservation test, selection-to-inspector tests for resource, agent, agent-instance, responsibility, edge, intervention, and map-reconciliation-action selections, keyboard/search selection test, round-list and round-graph mock tests, map fallback-state tests, disabled Start work test, no-thread-language test, old-shell-exclusion test, mobile navigation smoke test.
-- Milestone 5: work episode detail test, work-episode selection-to-detail test, round deep-link test, result-message back-link test, primary nav route test from Work detail, regular-submit-does-not-create-episode test, running-episode-blocks-regular-submit test, blocking work visibility test, approval/user-input action test, diff/terminal action test, transcript action test, deterministic fake-adapter Nitro-submit/resume smoke test that lands on `/projects/$environmentId/$projectId/work/$episodeId`, missing/ambiguous episode mapping fails-closed test.
+- Milestone 5: work episode detail test, work-episode selection-to-detail test, round deep-link test, result-message back-link test, primary nav route test from Work detail, regular-submit-does-not-create-episode test, running-episode-blocks-regular-submit test, Nitro-disabled-before-Cartographer test, Nitro project-map-icon adjacency test, blocking work visibility test, approval/user-input action test, diff/terminal action test, transcript action test, deterministic fake-adapter Nitro-submit/resume smoke test that lands on `/projects/$environmentId/$projectId/work/$episodeId`, missing/ambiguous episode mapping fails-closed test.
 - Milestone 6: authenticated startup routing test, project switch test, work-detail project-switch fallback test, legacy transcript deep-link test, reconnect/stale-map test.
 - Milestone 8 and later: backend snapshot/replay smoke test once real NitroMap subscriptions exist.
 
@@ -1055,6 +1059,8 @@ Use these stories to decide whether the mocked preparation UI is coherent before
 | Review work-linked intervention             | a work-episode-linked intervention exists                                 | the user selects it from Work                                 | the project-scoped work detail opens when the episode mapping is validated; otherwise the Work list fallback appears                             | 5                 |
 | Start work placeholder                      | the shell is at Milestone 4                                               | the user sees Start work                                      | the affordance is visibly disabled/non-interactive, creates no episode, calls no adapter mutation, and cannot link a backing thread              | 4                 |
 | Start episode with Nitro                    | the shell is at Milestone 5 or later and no episode is running            | the user clicks Nitro submit from a conversation composer     | the action goes through `NitroWorkEpisodeAdapter`, creates a new episode for that conversation, starts the first round, and links to Work detail | 5                 |
+| Show Nitro map context                      | the conversation composer is visible                                      | the user looks at the submit controls                         | a project-map icon appears adjacent to the Nitro button                                                                                          | 5                 |
+| Block Nitro before Cartographer             | the Cartographer has not yet produced a project ownership map             | the user hovers the Nitro button                              | Nitro is disabled and the hover text tells the user to run the Cartographer first                                                                | 5                 |
 | Regular submit stays ordinary               | no episode is running for the conversation                                | the user presses Enter or clicks the regular send button      | the existing main-agent chat flow runs and no work episode is created                                                                            | 5                 |
 | Running episode blocks ordinary submit      | a Nitro episode is running for the conversation                           | the user tries to send ordinary chat input                    | regular submit is disabled or blocked, and the user can inspect Work details or abort                                                            | 5                 |
 | Round result appears in chat                | a Nitro round finishes                                                    | the round output is ready                                     | a real `system` message appears in the main conversation with links to the episode and round details                                             | 5                 |
@@ -1158,6 +1164,8 @@ Outcome:
 - regular composer submit remains an ordinary main-agent message when no episode is running and does not create a work episode
 - regular composer submit is blocked while a Nitro episode is running for that conversation
 - the Nitro composer submit button is the explicit work-episode entry point and starts the first round
+- the composer shows a project-map icon adjacent to the Nitro button
+- the Nitro composer submit button is disabled until the Cartographer has produced a project ownership map
 - round completion inserts a real compact `system` message into the main conversation with deep links to episode and round details
 - compact work panel can show current episode and round status from existing thread state
 - full ChatView remains available as transcript/detail fallback
@@ -1171,6 +1179,7 @@ Quality bar:
 - no duplicated send-turn logic
 - Enter and the regular send button do not call the work-episode adapter and remain disabled/blocked while the conversation has a running Nitro episode
 - clicking the Nitro button goes through the work-episode adapter and creates a new episode/first round for the current conversation
+- disabled Nitro state explains that the user must run the Cartographer before starting a Nitro episode
 - Work owns episode, round, trace graph, invocation state, blocker, and abort details; the main conversation stays lean
 - no global current-thread fallback is allowed for work episode mapping
 - `NitroWorkEpisodeSummary` includes `conversationThreadId`, `startedFromMessageId`, `backingThreadId`, and `transcriptRoute`
