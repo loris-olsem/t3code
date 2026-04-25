@@ -214,7 +214,6 @@ function RoundTraceGraph(props: {
           return (
             <DirectionalSvgEdge
               key={`${parent.id}:${invocation.id}`}
-              id={`${parent.id}:${invocation.id}`}
               x1={parent.position.x}
               y1={parent.position.y}
               x2={invocation.position.x}
@@ -222,6 +221,7 @@ function RoundTraceGraph(props: {
               className="stroke-primary/45"
               arrowClassName="fill-primary/70"
               strokeWidth={0.36}
+              targetGap={9}
             />
           );
         })}

@@ -44,7 +44,6 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
               return (
                 <DirectionalSvgEdge
                   key={edge.id}
-                  id={edge.id}
                   x1={parent.position.x}
                   y1={parent.position.y}
                   x2={child.position.x}
@@ -52,6 +51,7 @@ export function NitroMapCanvas(props: NitroMapCanvasProps) {
                   className={active ? "stroke-primary" : "stroke-muted-foreground/45"}
                   arrowClassName={active ? "fill-primary" : "fill-muted-foreground/70"}
                   strokeWidth={active ? 0.55 : 0.28}
+                  targetGap={8}
                 />
               );
             })
