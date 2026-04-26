@@ -10,10 +10,10 @@
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { ClaudeModelSelection } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { ClaudeModelSelection } from "@nitrocode/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@nitrocode/shared/git";
 
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@nitrocode/contracts";
 import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";
 import {
   buildBranchNamePrompt,
@@ -31,7 +31,7 @@ import {
 import {
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+} from "@nitrocode/shared/model";
 import {
   getClaudeModelCapabilities,
   normalizeClaudeCliEffort,

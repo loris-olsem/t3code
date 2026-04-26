@@ -1,4 +1,4 @@
-import type { AuthPairingLink, ServerAuthBootstrapMethod } from "@t3tools/contracts";
+import type { AuthPairingLink, ServerAuthBootstrapMethod } from "@nitrocode/contracts";
 import { Data, DateTime, Duration, Context } from "effect";
 import type { Effect, Stream } from "effect";
 
@@ -54,4 +54,4 @@ export interface BootstrapCredentialServiceShape {
 export class BootstrapCredentialService extends Context.Service<
   BootstrapCredentialService,
   BootstrapCredentialServiceShape
->()("t3/auth/Services/BootstrapCredentialService") {}
+>()("nitrocode/auth/Services/BootstrapCredentialService") {}

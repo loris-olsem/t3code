@@ -2,14 +2,15 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import * as NodeProcess from "node:process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { expect } from "vitest";
 
-import { ServerSettingsError } from "@t3tools/contracts";
+import { ServerSettingsError } from "@nitrocode/contracts";
 
 import { ServerConfig } from "../../config.ts";
 import { TextGeneration } from "../Services/TextGeneration.ts";
@@ -27,7 +28,7 @@ const CursorTextGenerationTestLayer = CursorTextGenerationLive.pipe(
   Layer.provideMerge(ServerSettingsService.layerTest()),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3code-cursor-text-generation-test-",
+      prefix: "nitrocode-cursor-text-generation-test-",
     }),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -35,8 +36,34 @@ const CursorTextGenerationTestLayer = CursorTextGenerationLive.pipe(
 
 function makeAcpAgentWrapper(dir: string, env: Record<string, string>): string {
   const binDir = path.join(dir, "bin");
-  const agentPath = path.join(binDir, "agent");
+  const agentPath = path.join(binDir, NodeProcess.platform === "win32" ? "agent.cmd" : "agent");
   mkdirSync(binDir, { recursive: true });
+  if (NodeProcess.platform === "win32") {
+    const scriptPath = path.join(binDir, "agent-wrapper.mjs");
+    writeFileSync(
+      scriptPath,
+      `
+import { spawn } from "node:child_process";
+
+const env = ${JSON.stringify(env)};
+if (process.argv[2] !== "acp") {
+  process.stderr.write("unexpected args: " + process.argv.slice(2).join(" ") + "\\n");
+  process.exit(11);
+}
+const child = spawn("bun", [${JSON.stringify(mockAgentPath)}], {
+  stdio: "inherit",
+  env: { ...process.env, ...env },
+});
+child.on("exit", (code, signal) => {
+  if (typeof code === "number") process.exit(code);
+  process.exit(signal ? 1 : 0);
+});
+`.trimStart(),
+      "utf8",
+    );
+    writeFileSync(agentPath, `@echo off\r\nnode ${JSON.stringify(scriptPath)} %*\r\n`, "utf8");
+    return agentPath;
+  }
   writeFileSync(
     agentPath,
     [
@@ -60,7 +87,7 @@ function withFakeAcpAgent<A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E | ServerSettingsError, R | ServerSettingsService> {
   return Effect.gen(function* () {
-    const tempDir = mkdtempSync(path.join(os.tmpdir(), "t3code-cursor-text-acp-"));
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "nitrocode-cursor-text-acp-"));
     const agentPath = makeAcpAgentWrapper(tempDir, env);
     const serverSettings = yield* ServerSettingsService;
     const previousSettings = yield* serverSettings.getSettings;
@@ -115,13 +142,13 @@ function waitForFileContent(path: string): Effect.Effect<string> {
 
 it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
   it.effect("uses ACP model config options instead of raw CLI model ids", () => {
-    const requestLogDir = mkdtempSync(path.join(os.tmpdir(), "t3code-cursor-text-log-"));
+    const requestLogDir = mkdtempSync(path.join(os.tmpdir(), "nitrocode-cursor-text-log-"));
     const requestLogPath = path.join(requestLogDir, "requests.ndjson");
 
     return withFakeAcpAgent(
       {
-        T3_ACP_REQUEST_LOG_PATH: requestLogPath,
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+        NITROCODE_ACP_REQUEST_LOG_PATH: requestLogPath,
+        NITROCODE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           subject: "Add generated commit message",
           body: "- verify cursor acp model config path",
         }),
@@ -211,7 +238,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
   it.effect("accepts json objects with extra assistant text around them", () =>
     withFakeAcpAgent(
       {
-        T3_ACP_PROMPT_RESPONSE_TEXT:
+        NITROCODE_ACP_PROMPT_RESPONSE_TEXT:
           'Sure, here is the JSON:\n```json\n{\n  "subject": "Update README dummy comment with attribution and date",\n  "body": ""\n}\n```\nDone.',
       },
       Effect.gen(function* () {
@@ -237,7 +264,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
   it.effect("generates thread titles through Cursor ACP text generation", () =>
     withFakeAcpAgent(
       {
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+        NITROCODE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           title: '"Trim reconnect spinner status after resume."',
         }),
       },
@@ -259,13 +286,13 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
   );
 
   it.effect("closes the ACP child process after text generation completes", () => {
-    const exitLogDir = mkdtempSync(path.join(os.tmpdir(), "t3code-cursor-text-exit-log-"));
+    const exitLogDir = mkdtempSync(path.join(os.tmpdir(), "nitrocode-cursor-text-exit-log-"));
     const exitLogPath = path.join(exitLogDir, "exit.log");
 
     return withFakeAcpAgent(
       {
-        T3_ACP_EXIT_LOG_PATH: exitLogPath,
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+        NITROCODE_ACP_EXIT_LOG_PATH: exitLogPath,
+        NITROCODE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           subject: "Close runtime after generation",
           body: "",
         }),
@@ -286,6 +313,10 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
         });
 
         expect(generated.subject).toBe("Close runtime after generation");
+        if (NodeProcess.platform === "win32") {
+          rmSync(exitLogDir, { recursive: true, force: true });
+          return;
+        }
 
         const exitLog = yield* waitForFileContent(exitLogPath);
         expect(exitLog).toContain("exit:0");

@@ -12,12 +12,12 @@ import type {
   ServerProvider,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { createModelSelection, normalizeModelSlug } from "@nitrocode/shared/model";
 import {
   forwardRef,
   memo,
@@ -104,7 +104,7 @@ import {
   getProviderModels,
   resolveSelectableProvider,
 } from "../../providerModels";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@nitrocode/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";

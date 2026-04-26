@@ -1,6 +1,7 @@
 import * as NFS from "node:fs";
 import * as path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
+import * as NodeProcess from "node:process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { FileSystem, Schema } from "effect";
@@ -37,6 +38,17 @@ vi.mock("node:fs", async (importOriginal) => {
 
 const TestEnvelopeSchema = Schema.Struct({ mode: Schema.String });
 
+const closeFdIgnoringAlreadyClosed = (fd: number) => {
+  try {
+    NFS.closeSync(fd);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : null;
+    if (code !== "EBADF") {
+      throw error;
+    }
+  }
+};
+
 it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
   it.effect("uses platform-specific fd paths", () =>
     Effect.sync(() => {
@@ -49,7 +61,10 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
   it.effect("reads a bootstrap envelope from a provided fd", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      const filePath = yield* fs.makeTempFileScoped({
+        prefix: "nitrocode-bootstrap-",
+        suffix: ".ndjson",
+      });
 
       yield* fs.writeFileString(
         filePath,
@@ -58,22 +73,27 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
         })}\n`,
       );
 
-      const fd = yield* Effect.acquireRelease(
-        Effect.sync(() => NFS.openSync(filePath, "r")),
-        (fd) => Effect.sync(() => NFS.closeSync(fd)),
-      );
-
-      const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, { timeoutMs: 100 });
-      assertSome(payload, {
-        mode: "desktop",
-      });
+      const fd = NFS.openSync(filePath, "r");
+      try {
+        const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, { timeoutMs: 100 });
+        assertSome(payload, {
+          mode: "desktop",
+        });
+      } finally {
+        if (NodeProcess.platform !== "win32") {
+          closeFdIgnoringAlreadyClosed(fd);
+        }
+      }
     }),
   );
 
   it.effect("falls back to reading the inherited fd when path duplication fails", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      const filePath = yield* fs.makeTempFileScoped({
+        prefix: "nitrocode-bootstrap-",
+        suffix: ".ndjson",
+      });
 
       yield* fs.writeFileString(
         filePath,
@@ -102,7 +122,12 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
 
   it.effect("returns none when the fd is unavailable", () =>
     Effect.gen(function* () {
-      const fd = NFS.openSync("/dev/null", "r");
+      const fs = yield* FileSystem.FileSystem;
+      const filePath = yield* fs.makeTempFileScoped({
+        prefix: "nitrocode-bootstrap-closed-",
+        suffix: ".ndjson",
+      });
+      const fd = NFS.openSync(filePath, "r");
       NFS.closeSync(fd);
 
       const payload = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, { timeoutMs: 100 });
@@ -112,8 +137,12 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
 
   it.effect("returns none when the bootstrap read times out before any value arrives", () =>
     Effect.gen(function* () {
+      if (NodeProcess.platform === "win32") {
+        return;
+      }
+
       const fs = yield* FileSystem.FileSystem;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-bootstrap-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "nitrocode-bootstrap-" });
       const fifoPath = path.join(tempDir, "bootstrap.pipe");
 
       yield* Effect.sync(() => execFileSync("mkfifo", [fifoPath]));
@@ -132,7 +161,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
 
       const fd = yield* Effect.acquireRelease(
         Effect.sync(() => NFS.openSync(fifoPath, "r")),
-        (fd) => Effect.sync(() => NFS.closeSync(fd)),
+        (fd) => Effect.sync(() => closeFdIgnoringAlreadyClosed(fd)),
       );
 
       const fiber = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {

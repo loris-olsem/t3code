@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Animated NitroCode icon</title>
+  <desc id="desc">Animated nitro boost emblem with pulsing core and thrust. Transparent background.</desc>
+  <defs>
+    <radialGradient id="core" cx="50%" cy="43%" r="58%">
+      <stop offset="0%" stop-color="#ffcc00"/>
+      <stop offset="38%" stop-color="#ff4200"/>
+      <stop offset="78%" stop-color="#b90012"/>
+      <stop offset="100%" stop-color="#4c0007"/>
+    </radialGradient>
+    <linearGradient id="flameRed" x1="128" y1="98" x2="128" y2="247" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff200"/>
+      <stop offset="0.4" stop-color="#ff6700"/>
+      <stop offset="1" stop-color="#b8000b"/>
+    </linearGradient>
+    <linearGradient id="flameYellow" x1="128" y1="106" x2="128" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.46" stop-color="#ffd000"/>
+      <stop offset="1" stop-color="#ff4b00"/>
+    </linearGradient>
+    <filter id="redGlow" x="-45%" y="-45%" width="190%" height="190%">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 1  0 0.12 0 0 0.04  0 0 0.08 0 0  0 0 0 0.9 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="hotGlow" x="-45%" y="-45%" width="190%" height="190%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 1  0 0.62 0 0 0.3  0 0 0.1 0 0  0 0 0 0.95 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style><![CDATA[
+      .ring { transform-origin: 128px 96px; animation: ringKick .55s cubic-bezier(.2,.9,.1,1) infinite; }
+      .core { transform-origin: 128px 96px; animation: corePulse .55s ease-in-out infinite; }
+      .flame { transform-origin: 128px 123px; animation: blast .22s steps(2,end) infinite; }
+      .whitehot { transform-origin: 128px 123px; animation: whitePulse .22s steps(2,end) infinite; }
+      @keyframes ringKick { 0%,100%{transform:scale(1)} 45%{transform:scale(1.025)} }
+      @keyframes corePulse { 0%,100%{opacity:.9; transform:scale(1)} 50%{opacity:1; transform:scale(1.045)} }
+      @keyframes blast { 0%,100%{transform:scaleY(1) scaleX(1); opacity:.95} 50%{transform:scaleY(1.16) scaleX(1.06); opacity:1} }
+      @keyframes whitePulse { 0%,100%{transform:scaleY(.94); opacity:.86} 50%{transform:scaleY(1.18); opacity:1} }
+    ]]></style>
+  </defs>
+  <g class="ring" filter="url(#redGlow)">
+    <circle cx="128" cy="96" r="82" fill="none" stroke="#ff1300" stroke-width="15"/>
+    <g fill="#171014" stroke="#050205" stroke-width="6" stroke-linejoin="round">
+      <path d="M103 19h50l-5 24h-40z"/>
+      <path d="M184 39l34 34-21 13-27-27z"/>
+      <path d="M220 92v48l-25-5V97z"/>
+      <path d="M184 153l34 34-34 22-17-30z"/>
+      <path d="M72 153l-34 34 34 22 17-30z"/>
+      <path d="M36 92v48l25-5V97z"/>
+      <path d="M72 39L38 73l21 13 27-27z"/>
+    </g>
+    <circle cx="128" cy="96" r="76" fill="none" stroke="#0a0506" stroke-width="13"/>
+  </g>
+  <circle class="core" cx="128" cy="96" r="66" fill="url(#core)" stroke="#ff2100" stroke-width="5" filter="url(#redGlow)"/>
+  <g filter="url(#hotGlow)">
+    <path d="M128 34 145 66v36l19 18-12 36-24-16-24 16-12-36 19-18V66z" fill="none" stroke="#ffffff" stroke-width="10" stroke-linejoin="miter" stroke-linecap="square"/>
+    <g class="flame">
+      <path d="M128 113 146 162 190 151 161 181 181 225 144 195 128 246 112 195 75 225 95 181 66 151 110 162z" fill="url(#flameRed)" stroke="#e00000" stroke-width="3" stroke-linejoin="miter"/>
+      <path d="M128 118 141 164 170 160 151 184 160 218 136 190 128 232 120 190 96 218 105 184 86 160 115 164z" fill="url(#flameYellow)"/>
+    </g>
+    <path class="whitehot" d="M128 116 139 164 149 176 136 171 128 210 120 171 107 176 117 164z" fill="#ffffff"/>
+  </g>
+</svg>

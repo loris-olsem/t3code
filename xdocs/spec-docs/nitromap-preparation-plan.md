@@ -2,11 +2,13 @@
 
 ## Purpose
 
-This document is about preparing T3 Code for the NitroMap direction without implementing the real ownership-map intelligence yet.
+This document is about preparing NitroCode for the NitroMap direction without implementing the real ownership-map intelligence yet.
 
 The goal of this phase is structural: reshape the app so the product can become map-first, project-first, and work-episode-based while current provider/thread execution keeps working underneath. New NitroMap surfaces may use mocked data and placeholder services at first. Those mocks are not throwaway UI hacks; they should define the seams where real ownership agents, responsibility queries, map reconciliation actions, and interventions will later connect.
 
 This is a preparation plan, not the final NitroMap implementation plan.
+
+Implementation status: Milestones 1-5 have been implemented as the current preparation scaffold. The sections for those milestones now serve as regression criteria and design constraints. References to mocked NitroMap data remain intentional until the real Cartographer, ownership-agent runtime, and backend ownership projections replace the mock-backed read model.
 
 ## Current Constraints
 
@@ -83,7 +85,8 @@ Existing concepts should map as follows:
 - current thread -> main-agent conversation that can launch one or more Nitro work episodes
 - current regular chat submit, including Enter -> ordinary main-agent conversation message when no episode is running; no work episode by itself
 - current Nitro submit button -> creates a new work episode from the current conversation prompt and begins the first round
-- current messages -> main-agent conversation transcript; includes compact `system` round-output messages with links to episode and round details
+- current messages -> main-agent conversation transcript; includes compact final-round `system` result messages with links to episode and round details
+- ownership-agent runtime context -> episode-local state; fresh at episode start, reused across rounds in that episode, discarded when the episode completes
 - current activities -> raw material for round execution state, blockers, and trace inspection
 - current proposed plans -> possible work-episode artifacts
 - current checkpoints/diffs -> changed resources and result inspection
@@ -108,7 +111,7 @@ Canonical transitional names:
 | map reconciliation action | `NitroMapReconciliationAction`   | `NitroMapReconciliationAction` | Use this name consistently; do not create a parallel change type.                                                                                                               |
 | map maintenance summary   | `NitroMapMaintenanceSummary`     | none initially                 | UI-local rollup of Cartographer status and recent map reconciliation actions. Future contracts may derive it from `NitroMapReconciliationAction` records.                       |
 | work episode              | `NitroWorkEpisodeSummary`        | `NitroWorkEpisode`             | Separate work object attached to a project conversation. Many episodes may share the same conversation thread during preparation.                                               |
-| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. Nitro submit starts the first round; round completion inserts a compact `system` result message into the main conversation.          |
+| work round                | `NitroWorkRoundSummary`          | `NitroWorkRound`               | One deterministic cycle inside an episode. Nitro submit starts the first round; the final round result inserts a compact `system` result message into the main conversation.    |
 | round trace               | `NitroRoundTrace`                | `NitroOwnershipTrace`          | Round-scoped execution graph from concrete ownership-agent invocations. It is not a global activity item.                                                                       |
 | agent invocation          | `NitroAgentInvocation`           | `NitroOwnershipAgentResponse`  | Concrete inference/run of an ownership agent during one round. Distinct from the persistent ownership agent definition on the project map.                                      |
 
@@ -650,7 +653,11 @@ The preparation phase should make long chat history non-primary without breaking
 
 Each project can have multiple conversations. They share the same project ownership map, but each one has its own user-facing main agent state, backing thread during preparation, transcript, and active-turn lifecycle. Each conversation can launch many work episodes over time. NitroMap components must not treat the project as having one global current main agent, and they must not treat a conversation id as the episode id.
 
-After the user starts an episode with Nitro submit, the normal NitroMap flow should not require the user to manually coordinate ownership agents. Ownership traces are injected into the main agent's context automatically when that behavior exists. Round completion inserts a compact `system` result message into the main conversation with deep links to the episode and round details. The Work UI presents the trace details, ordered by trace creation and injection status, while keeping the main conversation lean. Trace entries should identify the root ownership agent, response chain, current status, and whether the main agent received raw, consolidated, failure, or no injected context.
+After the user starts an episode with Nitro submit, the normal NitroMap flow should not require the user to manually coordinate ownership agents. Ownership traces are injected into the main agent's context automatically when that behavior exists. Intermediate round packets remain episode-local working context and Work-inspection state. The final round result inserts a compact `system` result message into the main conversation with deep links to the episode and final round details. The Work UI presents the trace details, ordered by trace creation and injection status, while keeping the main conversation lean. Trace entries should identify the root ownership agent, response chain, current status, and whether the main agent received raw, consolidated, failure, or no injected context.
+
+Ownership-agent runtime context is scoped to one Nitro episode. The runtime should create fresh participating-agent context when an episode starts, reuse that context across all rounds inside the episode, and discard it when the episode completes. Different episodes, even when launched from the same conversation thread, must not share hidden ownership-agent runtime state. The only cross-episode handover is the real message content that the completed episode wrote into the main conversation thread, especially the final round result.
+
+An episode remains active while ownership-agent processing produces injections, comments, blockers, or follow-up work for the main agent. An episode completes after the main agent has acted and the latest ownership-agent pass is silent: no injections, no comments, and no blockers. Intermediate round details remain Work-owned inspection state; they are not separate main-conversation transcript entries.
 
 The user must be able to abort an active work episode turn. Abort should stop the current turn and pending ownership phases for that work episode, keep the user in the project-scoped NitroMap surface, and leave already persisted messages, traces, and the shared ownership map inspectable.
 
@@ -1063,7 +1070,7 @@ Use these stories to decide whether the mocked preparation UI is coherent before
 | Block Nitro before Cartographer             | the Cartographer has not yet produced a project ownership map             | the user hovers the Nitro button                              | Nitro is disabled and the hover text tells the user to run the Cartographer first                                                                | 5                 |
 | Regular submit stays ordinary               | no episode is running for the conversation                                | the user presses Enter or clicks the regular send button      | the existing main-agent chat flow runs and no work episode is created                                                                            | 5                 |
 | Running episode blocks ordinary submit      | a Nitro episode is running for the conversation                           | the user tries to send ordinary chat input                    | regular submit is disabled or blocked, and the user can inspect Work details or abort                                                            | 5                 |
-| Round result appears in chat                | a Nitro round finishes                                                    | the round output is ready                                     | a real `system` message appears in the main conversation with links to the episode and round details                                             | 5                 |
+| Round result appears in chat                | a Nitro episode reaches its final round                                   | the final round output is ready                               | a real `system` message appears in the main conversation with links to the episode and final round details                                       | 5                 |
 | Resume work                                 | a project has an active or recent episode                                 | the user opens Work and selects the episode                   | the project-scoped work detail opens with status, blockers, changed-resource summary when available, and transcript action                       | 5                 |
 | Handle approval blocker                     | a work episode has an approval blocker                                    | the user opens the primary action                             | approval can be handled in a NitroMap work panel/drawer and the user remains on NitroMap unless transcript is explicitly opened                  | 5                 |
 | Handle input blocker                        | a work episode needs user input                                           | the user opens the primary action                             | input can be answered in a NitroMap work panel/drawer and the episode updates through the adapter                                                | 5                 |
@@ -1166,9 +1173,12 @@ Outcome:
 - the Nitro composer submit button is the explicit work-episode entry point and starts the first round
 - the composer shows a project-map icon adjacent to the Nitro button
 - the Nitro composer submit button is disabled until the Cartographer has produced a project ownership map
-- round completion inserts a real compact `system` message into the main conversation with deep links to episode and round details
+- final round completion inserts a real compact `system` message into the main conversation with deep links to episode and round details
 - compact work panel can show current episode and round status from existing thread state
 - full ChatView remains available as transcript/detail fallback
+- ownership-agent runtime context is fresh per episode, reused across rounds in that episode, and discarded when the episode completes
+- episode completion is driven by a silent ownership-agent pass after the main agent's latest work: no injections, no comments, and no blockers
+- cross-episode handover is limited to real main-conversation messages produced by the completed episode, especially the final round result
 
 Quality bar:
 
@@ -1176,6 +1186,7 @@ Quality bar:
 - thread id is not the user-facing product identity in new UI
 - each project can have many conversations, each conversation can have many episodes, and all episodes share the project ownership map
 - each episode has separate round, trace, blocker, result-message, and abort state
+- each episode has separate ownership-agent runtime context; that context can span rounds inside the episode but must not leak into another episode
 - no duplicated send-turn logic
 - Enter and the regular send button do not call the work-episode adapter and remain disabled/blocked while the conversation has a running Nitro episode
 - clicking the Nitro button goes through the work-episode adapter and creates a new episode/first round for the current conversation

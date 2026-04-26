@@ -1,10 +1,10 @@
 import { Effect, Layer, Option, Ref, Schema } from "effect";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { CursorModelSelection } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { CursorModelSelection } from "@nitrocode/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@nitrocode/shared/git";
 
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@nitrocode/contracts";
 import {
   type ThreadTitleGenerationResult,
   type TextGenerationShape,
@@ -87,7 +87,7 @@ const makeCursorTextGeneration = Effect.gen(function* () {
         cursorSettings,
         childProcessSpawner: commandSpawner,
         cwd,
-        clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
+        clientInfo: { name: "nitro-code-git-text", version: "0.0.0" },
       });
 
       yield* runtime.handleSessionUpdate((notification) => {

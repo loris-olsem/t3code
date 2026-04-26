@@ -3,7 +3,7 @@ import { ActivityIcon, NetworkIcon, WrenchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { SidebarInset } from "~/components/ui/sidebar";
-import { scopeProjectRef } from "@t3tools/client-runtime";
+import { scopeProjectRef } from "@nitrocode/client-runtime";
 import { selectEnvironmentState, selectProjectByRef, useStore } from "~/store";
 import { Button } from "~/components/ui/button";
 import { mockNitroMapDataSource } from "../mockData";

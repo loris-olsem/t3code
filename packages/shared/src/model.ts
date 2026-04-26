@@ -6,7 +6,7 @@ import {
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type ProviderKind,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 
 export interface SelectableModelOption {
   slug: string;

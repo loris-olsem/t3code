@@ -5,7 +5,7 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@nitrocode/contracts";
 
 import type { NitroMapDataSource, NitroProjectMap, NitroMapRouteParams } from "./types";
 

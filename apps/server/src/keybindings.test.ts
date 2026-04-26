@@ -1,8 +1,9 @@
-import { KeybindingCommand, KeybindingRule, KeybindingsConfig } from "@t3tools/contracts";
+import { KeybindingCommand, KeybindingRule, KeybindingsConfig } from "@nitrocode/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertFailure } from "@effect/vitest/utils";
 import { Cause, Effect, FileSystem, Layer, Logger, Path, Schema } from "effect";
+import * as PlatformError from "effect/PlatformError";
 import { ServerConfig } from "./config.ts";
 
 import {
@@ -14,20 +15,40 @@ import {
   compileResolvedKeybindingsConfig,
   parseKeybindingShortcut,
 } from "./keybindings.ts";
-import { KeybindingsConfigError } from "@t3tools/contracts";
+import { KeybindingsConfigError } from "@nitrocode/contracts";
 
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
-const makeKeybindingsLayer = () => {
-  return KeybindingsLive.pipe(
-    Layer.provideMerge(
-      Layer.fresh(
-        ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3code-keybindings-test-",
-        }),
-      ),
-    ),
+const makeKeybindingsServerConfigLayer = () =>
+  Layer.fresh(
+    ServerConfig.layerTest(process.cwd(), {
+      prefix: "nitrocode-keybindings-test-",
+    }),
   );
+
+const makeKeybindingsLayer = () => {
+  return KeybindingsLive.pipe(Layer.provideMerge(makeKeybindingsServerConfigLayer()));
 };
+
+const RenameFailureFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+
+    return {
+      ...fileSystem,
+      rename: (from, to) =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "rename",
+            pathOrDescriptor: `${String(from)} -> ${String(to)}`,
+            description: "Permission denied while persisting keybindings config.",
+          }),
+        ),
+    } satisfies FileSystem.FileSystem;
+  }),
+).pipe(Layer.provide(NodeServices.layer));
 
 const toDetailResult = <A, R>(effect: Effect.Effect<A, KeybindingsConfigError, R>) =>
   effect.pipe(
@@ -423,15 +444,13 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
-  it.effect("fails when config directory is not writable", () =>
+  it.effect("fails when keybindings config cannot be written", () =>
     Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const { keybindingsConfigPath } = yield* ServerConfig;
-      const { dirname } = yield* Path.Path;
+      const serverConfig = yield* ServerConfig;
+      const { keybindingsConfigPath } = serverConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
         { key: "mod+j", command: "terminal.toggle" },
       ]);
-      yield* fs.chmod(dirname(keybindingsConfigPath), 0o500);
 
       const result = yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings;
@@ -439,15 +458,21 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           key: "mod+shift+r",
           command: "script.run-tests.run",
         });
-      }).pipe(toDetailResult);
+      }).pipe(
+        Effect.provide(
+          KeybindingsLive.pipe(
+            Layer.provide(Layer.succeed(ServerConfig, serverConfig)),
+            Layer.provideMerge(RenameFailureFileSystemLayer),
+          ),
+        ),
+        toDetailResult,
+      );
       assertFailure(result, "failed to write keybindings config");
-
-      yield* fs.chmod(dirname(keybindingsConfigPath), 0o700);
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
       assert.deepEqual(persistedView, [{ key: "mod+j", command: "terminal.toggle" }]);
-    }).pipe(Effect.provide(makeKeybindingsLayer())),
+    }).pipe(Effect.provide(makeKeybindingsServerConfigLayer())),
   );
 
   it.effect("caches loaded resolved config across repeated reads", () =>

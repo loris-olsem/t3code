@@ -141,7 +141,7 @@ jobs:
             echo "release_channel=stable" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "tag=v$version" >> "$GITHUB_OUTPUT"
-            echo "name=T3 Code v$version" >> "$GITHUB_OUTPUT"
+            echo "name=NitroCode v$version" >> "$GITHUB_OUTPUT"
             echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
             if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
@@ -245,7 +245,7 @@ jobs:
              }
 
       - name: Build desktop artifact
-        shell: bash
+        shell: pwsh
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -260,90 +260,87 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
-          args=(
-            --platform "${{ matrix.platform }}"
-            --target "${{ matrix.target }}"
-            --arch "${{ matrix.arch }}"
-            --build-version "${{ needs.preflight.outputs.version }}"
-            --verbose
+          $artifactArgs = @(
+            "--platform", "${{ matrix.platform }}",
+            "--target", "${{ matrix.target }}",
+            "--arch", "${{ matrix.arch }}",
+            "--build-version", "${{ needs.preflight.outputs.version }}",
+            "--verbose"
           )
 
-          has_all() {
-            for value in "$@"; do
-              if [[ -z "$value" ]]; then
-                return 1
-              fi
-            done
-            return 0
+          function Test-AllPresent {
+            param([string[]]$Values)
+            foreach ($value in $Values) {
+              if ([string]::IsNullOrWhiteSpace($value)) {
+                return $false
+              }
+            }
+            return $true
           }
 
-          if [[ "${{ matrix.platform }}" == "mac" ]]; then
-            if has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
-              key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-              printf '%s' "$APPLE_API_KEY" > "$key_path"
-              export APPLE_API_KEY="$key_path"
+          if ("${{ matrix.platform }}" -eq "mac") {
+            if (Test-AllPresent @($env:CSC_LINK, $env:CSC_KEY_PASSWORD, $env:APPLE_API_KEY, $env:APPLE_API_KEY_ID, $env:APPLE_API_ISSUER)) {
+              $keyPath = Join-Path $env:RUNNER_TEMP "AuthKey_$($env:APPLE_API_KEY_ID).p8"
+              Set-Content -Path $keyPath -Value $env:APPLE_API_KEY -NoNewline -Encoding utf8
+              $env:APPLE_API_KEY = $keyPath
               echo "macOS signing enabled."
-              args+=(--signed)
-            else
+              $artifactArgs += "--signed"
+            } else {
               echo "macOS signing disabled (missing one or more Apple signing secrets)."
-            fi
-          elif [[ "${{ matrix.platform }}" == "win" ]]; then
-            if has_all \
-              "$AZURE_TENANT_ID" \
-              "$AZURE_CLIENT_ID" \
-              "$AZURE_CLIENT_SECRET" \
-              "$AZURE_TRUSTED_SIGNING_ENDPOINT" \
-              "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME" \
-              "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME" \
-              "$AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"; then
+            }
+          } elseif ("${{ matrix.platform }}" -eq "win") {
+            if (Test-AllPresent @(
+              $env:AZURE_TENANT_ID,
+              $env:AZURE_CLIENT_ID,
+              $env:AZURE_CLIENT_SECRET,
+              $env:AZURE_TRUSTED_SIGNING_ENDPOINT,
+              $env:AZURE_TRUSTED_SIGNING_ACCOUNT_NAME,
+              $env:AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME,
+              $env:AZURE_TRUSTED_SIGNING_PUBLISHER_NAME
+            )) {
               echo "Windows signing enabled (Azure Trusted Signing)."
-              args+=(--signed)
-            else
+              $artifactArgs += "--signed"
+            } else {
               echo "Windows signing disabled (missing one or more Azure Trusted Signing secrets)."
-            fi
-          else
+            }
+          } else {
             echo "Signing disabled for ${{ matrix.platform }}."
-          fi
+          }
 
-          bun run dist:desktop:artifact -- "${args[@]}"
+          & bun run dist:desktop:artifact -- @artifactArgs
 
       - name: Collect release assets
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p release-publish
+          New-Item -ItemType Directory -Force release-publish | Out-Null
 
-          shopt -s nullglob
-          for pattern in \
-            "release/*.dmg" \
-            "release/*.zip" \
-            "release/*.AppImage" \
-            "release/*.exe" \
-            "release/*.blockmap" \
-            "release/*.yml"; do
-            for file in $pattern; do
-              cp "$file" release-publish/
-            done
-          done
+          $patterns = @(
+            "release/*.dmg",
+            "release/*.zip",
+            "release/*.AppImage",
+            "release/*.exe",
+            "release/*.blockmap",
+            "release/*.yml"
+          )
 
-          if [[ "${{ matrix.platform }}" == "mac" && "${{ matrix.arch }}" != "arm64" ]]; then
-            shopt -s nullglob
-            for manifest in release-publish/*-mac.yml; do
-              mv "$manifest" "${manifest%.yml}-${{ matrix.arch }}.yml"
-            done
-          fi
+          foreach ($pattern in $patterns) {
+            Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
+              Copy-Item -Destination release-publish -Force
+          }
 
-          # Enable if Windows arm64 builds are enabled.
-          # Windows updater metadata is channel-specific (for example
-          # "latest.yml" or "nightly.yml"). Suffix each per-arch copy so the
-          # release job can merge matching arm64/x64 manifests back into one
-          # canonical manifest per channel.
-          # if [[ "${{ matrix.platform }}" == "win" ]]; then
-          #   shopt -s nullglob
-          #   for manifest in release-publish/*.yml; do
-          #     mv "$manifest" "${manifest%.yml}-win-${{ matrix.arch }}.yml"
-          #   done
-          # fi
+          if ("${{ matrix.platform }}" -eq "mac" -and "${{ matrix.arch }}" -ne "arm64") {
+            Get-ChildItem -Path release-publish -Filter "*-mac.yml" -File |
+              Rename-Item -NewName { "$($_.BaseName)-${{ matrix.arch }}$($_.Extension)" }
+          }
+
+          # Enable if Windows arm64 builds are enabled. Windows updater metadata
+          # is channel-specific (for example "latest.yml" or "nightly.yml").
+          # Suffix each per-arch copy so the release job can merge matching
+          # arm64/x64 manifests back into one canonical manifest per channel.
+          # if ("${{ matrix.platform }}" -eq "win") {
+          #   Get-ChildItem -Path release-publish -Filter "*.yml" -File |
+          #     Rename-Item -NewName { "$($_.BaseName)-win-${{ matrix.arch }}$($_.Extension)" }
+          # }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
@@ -382,7 +379,7 @@ jobs:
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
       - name: Build CLI package
-        run: bun run build --filter=@t3tools/web --filter=t3
+        run: bun run build --filter=@nitrocode/web --filter=nitrocode
 
       - name: Publish CLI package
         run: node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --verbose

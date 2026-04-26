@@ -1,9 +1,10 @@
 import os from "node:os";
+import * as NFS from "node:fs";
 
 import { assert, expect, it } from "@effect/vitest";
 import { ConfigProvider, Effect, FileSystem, Layer, Option, Path } from "effect";
 
-import { NetService } from "@t3tools/shared/Net";
+import { NetService } from "@nitrocode/shared/Net";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { deriveServerPaths } from "./config.ts";
 import { resolveServerConfig } from "./cli.ts";
@@ -18,21 +19,23 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
-    otlpServiceName: "t3-server",
+    otlpServiceName: "nitrocode-server",
   } as const;
 
   const openBootstrapFd = Effect.fn(function* (payload: Record<string, unknown>) {
     const fs = yield* FileSystem.FileSystem;
-    const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+    const filePath = yield* fs.makeTempFileScoped({
+      prefix: "nitrocode-bootstrap-",
+      suffix: ".ndjson",
+    });
     yield* fs.writeFileString(filePath, `${JSON.stringify(payload)}\n`);
-    const { fd } = yield* fs.open(filePath, { flag: "r" });
-    return fd;
+    return NFS.openSync(filePath, "r");
   });
 
   it.effect("falls back to effect/config values when flags are omitted", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = join(os.tmpdir(), "t3-cli-config-env-base");
+      const baseDir = join(os.tmpdir(), "nitrocode-cli-config-env-base");
       const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:5173"));
       const resolved = yield* resolveServerConfig(
         {
@@ -54,15 +57,15 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_LOG_LEVEL: "Warn",
-                  T3CODE_MODE: "desktop",
-                  T3CODE_PORT: "4001",
-                  T3CODE_HOST: "0.0.0.0",
-                  T3CODE_HOME: baseDir,
+                  NITROCODE_LOG_LEVEL: "Warn",
+                  NITROCODE_MODE: "desktop",
+                  NITROCODE_PORT: "4001",
+                  NITROCODE_HOST: "0.0.0.0",
+                  NITROCODE_HOME: baseDir,
                   VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  NITROCODE_NO_BROWSER: "true",
+                  NITROCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
+                  NITROCODE_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -94,7 +97,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("uses CLI flags when provided", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = join(os.tmpdir(), "t3-cli-config-flags-base");
+      const baseDir = join(os.tmpdir(), "nitrocode-cli-config-flags-base");
       const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4173"));
       const resolved = yield* resolveServerConfig(
         {
@@ -116,15 +119,15 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_LOG_LEVEL: "Warn",
-                  T3CODE_MODE: "desktop",
-                  T3CODE_PORT: "4001",
-                  T3CODE_HOST: "0.0.0.0",
-                  T3CODE_HOME: join(os.tmpdir(), "ignored-base"),
+                  NITROCODE_LOG_LEVEL: "Warn",
+                  NITROCODE_MODE: "desktop",
+                  NITROCODE_PORT: "4001",
+                  NITROCODE_HOST: "0.0.0.0",
+                  NITROCODE_HOME: join(os.tmpdir(), "ignored-base"),
                   VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
-                  T3CODE_NO_BROWSER: "false",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
-                  T3CODE_LOG_WS_EVENTS: "false",
+                  NITROCODE_NO_BROWSER: "false",
+                  NITROCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
+                  NITROCODE_LOG_WS_EVENTS: "false",
                 },
               }),
             ),
@@ -156,7 +159,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("preserves explicit false CLI boolean flags over env and bootstrap values", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = join(os.tmpdir(), "t3-cli-config-false-flags");
+      const baseDir = join(os.tmpdir(), "nitrocode-cli-config-false-flags");
       const fd = yield* openBootstrapFd({
         noBrowser: true,
         autoBootstrapProjectFromCwd: true,
@@ -184,10 +187,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_BOOTSTRAP_FD: String(fd),
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  NITROCODE_BOOTSTRAP_FD: String(fd),
+                  NITROCODE_NO_BROWSER: "true",
+                  NITROCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  NITROCODE_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -218,13 +221,16 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
   it.effect("uses bootstrap envelope values as fallbacks when flags and env are absent", () =>
     Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
       const { join } = yield* Path.Path;
-      const baseDir = "/tmp/t3-bootstrap-home";
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-bootstrap-home-",
+      });
       const fd = yield* openBootstrapFd({
         mode: "desktop",
         port: 4888,
         host: "127.0.0.2",
-        t3Home: baseDir,
+        nitrocodeHome: baseDir,
         devUrl: "http://127.0.0.1:5173",
         noBrowser: true,
         autoBootstrapProjectFromCwd: false,
@@ -254,7 +260,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_BOOTSTRAP_FD: String(fd),
+                  NITROCODE_BOOTSTRAP_FD: String(fd),
                 },
               }),
             ),
@@ -290,7 +296,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-config-dirs-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "nitrocode-cli-config-dirs-" });
       const customCwd = path.join(baseDir, "nested", "project");
 
       const resolved = yield* resolveServerConfig(
@@ -336,12 +342,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("applies flag then env precedence over bootstrap envelope values", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = join(os.tmpdir(), "t3-cli-config-env-wins");
+      const baseDir = join(os.tmpdir(), "nitrocode-cli-config-env-wins");
       const fd = yield* openBootstrapFd({
         mode: "desktop",
         port: 4888,
         host: "127.0.0.2",
-        t3Home: "/tmp/t3-bootstrap-home",
+        nitrocodeHome: "/tmp/nitrocode-bootstrap-home",
         devUrl: "http://127.0.0.1:5173",
         noBrowser: false,
         autoBootstrapProjectFromCwd: false,
@@ -369,12 +375,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_MODE: "web",
-                  T3CODE_BOOTSTRAP_FD: String(fd),
-                  T3CODE_HOME: baseDir,
-                  T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-                  T3CODE_LOG_WS_EVENTS: "true",
+                  NITROCODE_MODE: "web",
+                  NITROCODE_BOOTSTRAP_FD: String(fd),
+                  NITROCODE_HOME: baseDir,
+                  NITROCODE_NO_BROWSER: "true",
+                  NITROCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  NITROCODE_LOG_WS_EVENTS: "true",
                 },
               }),
             ),
@@ -407,7 +413,9 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-config-settings-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-cli-config-settings-",
+      });
       const derivedPaths = yield* deriveServerPaths(baseDir, undefined);
       yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
       yield* fs.writeFileString(
@@ -470,7 +478,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("forces noBrowser and disables auto-bootstrap for headless startup presentation", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = join(os.tmpdir(), "t3-cli-config-headless-base");
+      const baseDir = join(os.tmpdir(), "nitrocode-cli-config-headless-base");
       const derivedPaths = yield* deriveServerPaths(baseDir, undefined);
 
       const resolved = yield* resolveServerConfig(
@@ -496,8 +504,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  T3CODE_NO_BROWSER: "false",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+                  NITROCODE_NO_BROWSER: "false",
+                  NITROCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                 },
               }),
             ),

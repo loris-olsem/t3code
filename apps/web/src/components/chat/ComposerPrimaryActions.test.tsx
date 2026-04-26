@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@nitrocode/contracts";
 import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 

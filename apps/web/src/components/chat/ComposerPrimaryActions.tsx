@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { buildNitroMapRouteParams, NITRO_MAP_ROUTE_BY_VIEW } from "../../nitromap/routes";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@nitrocode/contracts";
 
 interface PendingActionState {
   questionIndex: number;

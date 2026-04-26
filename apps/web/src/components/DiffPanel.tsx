@@ -2,8 +2,8 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { scopeThreadRef } from "@t3tools/client-runtime";
-import type { TurnId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@nitrocode/client-runtime";
+import type { TurnId } from "@nitrocode/contracts";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,

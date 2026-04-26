@@ -1,12 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Path, Result } from "effect";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { expect } from "vitest";
+import * as NodeProcess from "node:process";
 
 import { ServerConfig } from "../../config.ts";
 import { CodexTextGenerationLive } from "./CodexTextGeneration.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@nitrocode/contracts";
 import { TextGeneration } from "../Services/TextGeneration.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
@@ -19,7 +20,7 @@ const CodexTextGenerationTestLayer = CodexTextGenerationLive.pipe(
   Layer.provideMerge(ServerSettingsService.layerTest()),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3code-codex-text-generation-test-",
+      prefix: "nitrocode-codex-text-generation-test-",
     }),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -43,8 +44,78 @@ function makeFakeCodexBinary(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const binDir = path.join(dir, "bin");
-    const codexPath = path.join(binDir, "codex");
+    const codexPath = path.join(binDir, NodeProcess.platform === "win32" ? "codex.cmd" : "codex");
     yield* fs.makeDirectory(binDir, { recursive: true });
+
+    if (NodeProcess.platform === "win32") {
+      const scriptPath = path.join(binDir, "codex-fake.mjs");
+      yield* fs.writeFileString(
+        scriptPath,
+        `
+import * as fs from "node:fs";
+
+const input = ${JSON.stringify(input)};
+const args = process.argv.slice(2);
+let outputPath = "";
+let seenImage = false;
+let seenFastServiceTier = false;
+let seenReasoningEffort = "";
+
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === "--image") {
+    if (args[index + 1]) seenImage = true;
+    index += 1;
+    continue;
+  }
+  if (arg === "--config") {
+    const value = args[index + 1] ?? "";
+    if (value === 'service_tier="fast"' || value === "service_tier=fast") seenFastServiceTier = true;
+    if (value.startsWith("model_reasoning_effort=")) seenReasoningEffort = value;
+    index += 1;
+    continue;
+  }
+  if (arg === "--output-last-message") {
+    outputPath = args[index + 1] ?? "";
+    index += 1;
+  }
+}
+
+const stdinContent = fs.readFileSync(0, "utf8");
+const fail = (message, code) => {
+  process.stderr.write(message + "\\n");
+  process.exit(code);
+};
+
+if (input.requireImage && !seenImage) fail("missing --image input", 2);
+if (input.requireFastServiceTier && !seenFastServiceTier) fail("missing fast service tier config", 5);
+const expectedReasoningEffort = new Set([
+  'model_reasoning_effort="' + input.requireReasoningEffort + '"',
+  "model_reasoning_effort=" + input.requireReasoningEffort,
+]);
+if (input.requireReasoningEffort !== undefined && !expectedReasoningEffort.has(seenReasoningEffort)) {
+  fail("unexpected reasoning effort config: " + seenReasoningEffort, 6);
+}
+if (input.forbidReasoningEffort && seenReasoningEffort.length > 0) {
+  fail("reasoning effort config should be omitted: " + seenReasoningEffort, 7);
+}
+if (input.stdinMustContain !== undefined && !stdinContent.includes(input.stdinMustContain)) {
+  fail("stdin missing expected content", 3);
+}
+if (input.stdinMustNotContain !== undefined && stdinContent.includes(input.stdinMustNotContain)) {
+  fail("stdin contained forbidden content", 4);
+}
+if (input.stderr !== undefined) process.stderr.write(input.stderr + "\\n");
+if (outputPath.length > 0) fs.writeFileSync(outputPath, input.output);
+process.exit(input.exitCode ?? 0);
+`.trimStart(),
+      );
+      yield* fs.writeFileString(
+        codexPath,
+        `@echo off\r\nnode ${JSON.stringify(scriptPath)} %*\r\n`,
+      );
+      return codexPath;
+    }
 
     yield* fs.writeFileString(
       codexPath,
@@ -137,9 +208,9 @@ function makeFakeCodexBinary(
           ? [`printf "%s\\n" ${JSON.stringify(input.stderr)} >&2`]
           : []),
         'if [ -n "$output_path" ]; then',
-        "  cat > \"$output_path\" <<'__T3CODE_FAKE_CODEX_OUTPUT__'",
+        "  cat > \"$output_path\" <<'__NITROCODE_FAKE_CODEX_OUTPUT__'",
         input.output,
-        "__T3CODE_FAKE_CODEX_OUTPUT__",
+        "__NITROCODE_FAKE_CODEX_OUTPUT__",
         "fi",
         `exit ${input.exitCode ?? 0}`,
         "",
@@ -167,7 +238,7 @@ function withFakeCodexEnv<A, E, R>(
   return Effect.acquireUseRelease(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-codex-text-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "nitrocode-codex-text-" });
       const codexPath = yield* makeFakeCodexBinary(tempDir, input);
       const serverSettings = yield* ServerSettingsService;
       const previousSettings = yield* serverSettings.getSettings;

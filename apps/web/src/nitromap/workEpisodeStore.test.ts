@@ -1,4 +1,4 @@
-import { EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ProjectId, ThreadId } from "@nitrocode/contracts";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import {

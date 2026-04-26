@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ServerProvider } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import type { ServerProvider } from "@nitrocode/contracts";
+import { createModelCapabilities } from "@nitrocode/shared/model";
 import { assert, it } from "@effect/vitest";
 import { Effect, FileSystem } from "effect";
 
@@ -34,7 +34,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
   it.effect("writes and reads provider status snapshots", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-provider-cache-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "nitrocode-provider-cache-" });
       const codexProvider = makeProvider("codex");
       const claudeProvider = makeProvider("claudeAgent", {
         status: "warning",
@@ -148,7 +148,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
       version: null,
       status: "disabled",
       auth: { status: "unknown" },
-      message: "Codex is disabled in T3 Code settings.",
+      message: "Codex is disabled in NitroCode settings.",
     });
 
     assert.deepStrictEqual(

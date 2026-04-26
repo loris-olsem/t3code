@@ -18,7 +18,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   Cache,
   Deferred,
@@ -41,9 +41,9 @@ import {
 import * as Semaphore from "effect/Semaphore";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
 import { ServerConfig } from "./config.ts";
-import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { type DeepPartial, deepMerge } from "@nitrocode/shared/Struct";
+import { fromLenientJson } from "@nitrocode/shared/schemaJson";
+import { applyServerSettingsPatch } from "@nitrocode/shared/serverSettings";
 
 export interface ServerSettingsShape {
   /** Start the settings runtime and attach file watching. */
@@ -67,7 +67,7 @@ export interface ServerSettingsShape {
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   ServerSettingsShape
->()("t3/serverSettings/ServerSettingsService") {
+>()("nitrocode/serverSettings/ServerSettingsService") {
   static readonly layerTest = (overrides: DeepPartial<ServerSettings> = {}) =>
     Layer.effect(
       ServerSettingsService,

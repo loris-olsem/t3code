@@ -2,7 +2,7 @@
 
 ## Purpose
 
-T3 Code currently presents coding-agent work as a chat application: projects contain threads, threads contain turns and messages, and the sidebar is the primary navigation model. This vision replaces that product shape with an ownership-oriented agent workspace.
+NitroCode currently presents coding-agent work as a chat application: projects contain threads, threads contain turns and messages, and the sidebar is the primary navigation model. This vision replaces that product shape with an ownership-oriented agent workspace.
 
 Projects remain a first-class concept, but the main project surface becomes an ownership map rather than a list of chats. The map shows persistent agents, the scopes they care about, the relationships between those scopes, and the live interventions those agents make while work is happening.
 
@@ -452,9 +452,15 @@ The project conversation has two submit paths. The regular submit path, includin
 
 The Nitro submit path is an explicit user action that starts a new episode from the current prompt in the current conversation. That episode starts its first round and activates ownership-agent trace processing. The composer should show a project-map icon adjacent to the Nitro button so the action is visually tied to the project ownership map. If the Cartographer has not yet produced an ownership map for the project, the Nitro button must be disabled and its hover text should tell the user to run the Cartographer first.
 
+Ownership-agent runtime state is episode-local. A Nitro episode creates fresh runtime context for the participating implementation and management agents. If the episode advances through multiple rounds, those agents keep the same episode runtime context across rounds so they can use what they learned earlier in the same episode. They are not reset between rounds.
+
+Ownership-agent runtime state is reset between episodes. A later episode starts from the current durable ownership map and the current conversation prompt, not from hidden ownership-agent chat history left over from a prior episode. The only handover from one episode to later episodes is what the completed episode wrote into the main conversation thread as real messages, especially the final round result.
+
 The user-facing agent, implementation agents, and management agents all need the user's request. Otherwise ownership agents lack the intent behind the changed resources. The amount of additional context should differ by role: implementation agents need relevant diffs; management agents usually need implementation responses plus summaries.
 
-After the user starts a Nitro episode from the project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. The main conversation should receive only compact final round outputs as real `system` messages. Those messages should include deep links to the episode and round details. The detailed traces, invocation graph, concrete agent state, blockers, and abort status belong in the Work surface, not in the main chat transcript.
+After the user starts a Nitro episode from the project conversation, the normal expectation is that the user does not need to manually coordinate the ownership agents. Ownership traces are inserted back into the main agent's context automatically, so the main agent can continue, fix, ask a focused follow-up, or finish with the specialist feedback already present. Intermediate round packets remain episode-local working context and Work-inspection state. The main conversation should receive only compact final round outputs as real `system` messages. Those messages should include deep links to the episode and round details. The detailed traces, invocation graph, concrete agent state, blockers, and abort status belong in the Work surface, not in the main chat transcript.
+
+A Nitro episode continues while the ownership pass produces feedback that must be injected into the main agent context, comments the main agent should see, blockers, or follow-up work. The episode ends after the main agent has acted and the latest ownership-agent pass produces no injections, no comments, and no blockers. If all relevant ownership agents remain silent after the main agent's latest work, the episode is complete and its episode-local ownership-agent runtime state is discarded.
 
 The user must still be able to abort an active conversation or work round. Abort means stopping the current user-facing agent turn and any pending ownership-agent phases that have not yet been injected. Already persisted messages, traces, and map state remain inspectable; aborting a conversation does not mutate the ownership map.
 
@@ -733,7 +739,7 @@ After implementation and management phases complete, the system should build a r
 
 Large traces may be consolidated, but consolidation should preserve structured severity, ownership attribution, required actions, and unresolved conflicts.
 
-The prepared round packet is materialized for the user as a compact `system` message in the main conversation. That message is the main transcript anchor for the round result and should link to the episode and round details. It should not inline the full trace graph or turn the main conversation into the place where episode internals are inspected.
+The prepared round packet is injected into the user-facing agent during the active episode. Intermediate packets remain episode-local working context and Work-inspection state. When the episode completes, the final round result is materialized for the user as a compact `system` message in the main conversation. That message is the main transcript anchor for the episode result and should link to the episode and final round details. It should not inline the full trace graph or turn the main conversation into the place where episode internals are inspected.
 
 ## Ownership Hierarchy
 
@@ -807,6 +813,9 @@ Expected reset behavior:
 - starting a new conversation creates a separate user-facing main agent state for that conversation
 - starting a Nitro episode creates fresh per-episode round, trace, and abort state attached to the current conversation
 - ownership agents activated for the new episode receive fresh per-episode context
+- ownership agents keep that per-episode runtime context across rounds inside the same episode
+- ownership-agent runtime context is discarded when the episode ends
+- a later episode can only inherit prior work through messages that were written into the main conversation thread, especially the completed episode's final round result
 - agent definitions, scopes, hierarchy, and Cartographer-maintained organization persist
 - ownership agents remain memory-light; do not add separate long-term per-agent memory beyond the durable ownership map in the first implementation
 - the user can explicitly request a full ownership-map recompute
@@ -847,7 +856,7 @@ The new first-order surfaces are:
 
 The ownership map should be the main navigation and orientation surface inside a project. It should show agents, responsibilities, hierarchy, and active status. The user should be able to inspect an agent to understand what it owns, why it exists, when it last intervened, and what evidence supports its scope.
 
-The active work episode can link back to the conversation that launched it, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent when no Nitro episode is running, and they do not create episodes. The Nitro submit action starts a new episode from the current conversation prompt only after the project has an ownership map. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main thread as a compact `system` result message.
+The active work episode can link back to the conversation that launched it, but it should not dominate the product. Work should be organized as episodes and rounds. Regular conversation messages remain available for iteration with the main agent when no Nitro episode is running, and they do not create episodes. The Nitro submit action starts a new episode from the current conversation prompt only after the project has an ownership map. Each round shows the concrete ownership-agent invocations that happened before the trace packet was injected back into the user-facing main agent context. The final round result is written back into the main thread as a compact `system` result message.
 
 ## UI Concept Direction
 

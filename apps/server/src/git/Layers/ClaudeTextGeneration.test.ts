@@ -1,8 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Path } from "effect";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { expect } from "vitest";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 
 import { ServerConfig } from "../../config.ts";
 import { TextGeneration } from "../Services/TextGeneration.ts";
@@ -14,7 +16,7 @@ const ClaudeTextGenerationTestLayer = ClaudeTextGenerationLive.pipe(
   Layer.provideMerge(ServerSettingsService.layerTest()),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3code-claude-text-generation-test-",
+      prefix: "nitrocode-claude-text-generation-test-",
     }),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -25,8 +27,49 @@ function makeFakeClaudeBinary(dir: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const binDir = path.join(dir, "bin");
-    const claudePath = path.join(binDir, "claude");
+    const claudePath = path.join(
+      binDir,
+      NodeProcess.platform === "win32" ? "claude.cmd" : "claude",
+    );
     yield* fs.makeDirectory(binDir, { recursive: true });
+
+    if (NodeProcess.platform === "win32") {
+      const scriptPath = path.join(binDir, "claude-fake.mjs");
+      yield* fs.writeFileString(
+        scriptPath,
+        `
+import * as fs from "node:fs";
+
+const args = process.argv.slice(2).join(" ");
+const stdinContent = fs.readFileSync(0, "utf8");
+const normalize = (value) => value.replaceAll('"', "");
+const fail = (message, code) => {
+  process.stderr.write(message + "\\n");
+  process.exit(code);
+};
+
+if (process.env.T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN && !normalize(args).includes(normalize(process.env.T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN))) {
+  fail("args missing expected content", 2);
+}
+if (process.env.T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN && normalize(args).includes(normalize(process.env.T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN))) {
+  fail("args contained forbidden content", 3);
+}
+if (process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN && !stdinContent.includes(process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN)) {
+  fail("stdin missing expected content", 4);
+}
+if (process.env.T3_FAKE_CLAUDE_STDERR) {
+  process.stderr.write(process.env.T3_FAKE_CLAUDE_STDERR + "\\n");
+}
+process.stdout.write(process.env.T3_FAKE_CLAUDE_OUTPUT ?? "");
+process.exit(Number(process.env.T3_FAKE_CLAUDE_EXIT_CODE ?? "0"));
+`.trimStart(),
+      );
+      yield* fs.writeFileString(
+        claudePath,
+        `@echo off\r\nnode ${JSON.stringify(scriptPath)} %*\r\n`,
+      );
+      return binDir;
+    }
 
     yield* fs.writeFileString(
       claudePath,
@@ -79,7 +122,7 @@ function withFakeClaudeEnv<A, E, R>(
   return Effect.acquireUseRelease(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-claude-text-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "nitrocode-claude-text-" });
       const binDir = yield* makeFakeClaudeBinary(tempDir);
       const previousPath = process.env.PATH;
       const previousOutput = process.env.T3_FAKE_CLAUDE_OUTPUT;
@@ -90,7 +133,7 @@ function withFakeClaudeEnv<A, E, R>(
       const previousStdinMustContain = process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;
 
       yield* Effect.sync(() => {
-        process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+        process.env.PATH = [binDir, previousPath ?? ""].filter(Boolean).join(NodePath.delimiter);
         process.env.T3_FAKE_CLAUDE_OUTPUT = input.output;
 
         if (input.exitCode !== undefined) {

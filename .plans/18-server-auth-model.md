@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the long-term server auth architecture for T3 Code before first-class remote environments ship.
+Define the long-term server auth architecture for NitroCode before first-class remote environments ship.
 
 This plan is deliberately broader than the current WebSocket token check and narrower than a complete remote collaboration system. The goal is to make the server secure by default, keep local desktop UX frictionless, and leave clean integration points for future remote access methods.
 
@@ -29,7 +29,7 @@ This document is written in terms of Effect-native services and layers because a
 
 ### 1. Auth is a server concern
 
-Every privileged surface of the T3 server must go through the same auth policy engine:
+Every privileged surface of the NitroCode server must go through the same auth policy engine:
 
 - HTTP routes
 - WebSocket upgrades
@@ -291,7 +291,7 @@ export interface ServerAuthShape {
 }
 
 export class ServerAuth extends ServiceMap.Service<ServerAuth, ServerAuthShape>()(
-  "t3/ServerAuth",
+  "nitrocode/ServerAuth",
 ) {}
 ```
 
@@ -547,31 +547,31 @@ The desktop shell is trusted to bootstrap the local renderer, but the renderer s
 Participants:
   DesktopMain   = Electron main
   SecretStore   = secure local secret backend
-  T3Server      = local backend child process
+  NitroCodeServer      = local backend child process
   Frontend      = desktop renderer
 
 DesktopMain -> SecretStore : getOrCreate("server-signing-key")
 SecretStore --> DesktopMain : signing key available
 
-DesktopMain -> T3Server : spawn server (--bootstrap-fd ...)
-DesktopMain -> T3Server : send desktop bootstrap envelope
-note over T3Server : policy = DesktopManagedLocalPolicy
-note over T3Server : allowed pairing = desktop-bootstrap only
+DesktopMain -> NitroCodeServer : spawn server (--bootstrap-fd ...)
+DesktopMain -> NitroCodeServer : send desktop bootstrap envelope
+note over NitroCodeServer : policy = DesktopManagedLocalPolicy
+note over NitroCodeServer : allowed pairing = desktop-bootstrap only
 
 Frontend -> DesktopMain : request local bootstrap grant
 DesktopMain --> Frontend : short-lived desktop bootstrap grant
 
-Frontend -> T3Server : POST /api/auth/bootstrap
-T3Server -> T3Server : validate desktop bootstrap grant
-T3Server -> T3Server : create browser session
-T3Server --> Frontend : Set-Cookie: session=...
+Frontend -> NitroCodeServer : POST /api/auth/bootstrap
+NitroCodeServer -> NitroCodeServer : validate desktop bootstrap grant
+NitroCodeServer -> NitroCodeServer : create browser session
+NitroCodeServer --> Frontend : Set-Cookie: session=...
 
-Frontend -> T3Server : GET /ws + authenticated cookie
-T3Server -> T3Server : validate cookie session
-T3Server --> Frontend : websocket accepted
+Frontend -> NitroCodeServer : GET /ws + authenticated cookie
+NitroCodeServer -> NitroCodeServer : validate cookie session
+NitroCodeServer --> Frontend : websocket accepted
 ```
 
-### `npx t3` user
+### `npx nitrocode` user
 
 This is the standalone local server flow.
 
@@ -579,27 +579,27 @@ There is no trusted desktop shell here, so pairing should be explicit.
 
 ```text
 Participants:
-  UserShell     = npx t3 launcher
-  T3Server      = standalone local server
+  UserShell     = npx nitrocode launcher
+  NitroCodeServer      = standalone local server
   Browser       = browser tab
 
-UserShell -> T3Server : start server
-T3Server -> T3Server : getOrCreate("server-signing-key")
-note over T3Server : policy = LoopbackBrowserPolicy
+UserShell -> NitroCodeServer : start server
+NitroCodeServer -> NitroCodeServer : getOrCreate("server-signing-key")
+note over NitroCodeServer : policy = LoopbackBrowserPolicy
 
-UserShell -> T3Server : issue one-time pairing token
-T3Server --> UserShell : pairing URL or pairing token
+UserShell -> NitroCodeServer : issue one-time pairing token
+NitroCodeServer --> UserShell : pairing URL or pairing token
 
 UserShell --> Browser : open /pair?token=...
 
-Browser -> T3Server : GET /pair?token=...
-T3Server -> T3Server : validate one-time token
-T3Server -> T3Server : create browser session
-T3Server --> Browser : Set-Cookie: session=...
-T3Server --> Browser : redirect to app
+Browser -> NitroCodeServer : GET /pair?token=...
+NitroCodeServer -> NitroCodeServer : validate one-time token
+NitroCodeServer -> NitroCodeServer : create browser session
+NitroCodeServer --> Browser : Set-Cookie: session=...
+NitroCodeServer --> Browser : redirect to app
 
-Browser -> T3Server : GET /ws + authenticated cookie
-T3Server --> Browser : websocket accepted
+Browser -> NitroCodeServer : GET /ws + authenticated cookie
+NitroCodeServer --> Browser : websocket accepted
 ```
 
 ### Phone user with tunneled host
@@ -619,29 +619,29 @@ Participants:
   DesktopUser   = user at the host machine
   DesktopMain   = desktop app
   Tunnel        = tunnel provider
-  T3Server      = T3 server
+  NitroCodeServer      = NitroCode server
   PhoneBrowser  = mobile browser
 
 DesktopUser -> DesktopMain : enable remote access via tunnel
-DesktopMain -> T3Server : switch policy to RemoteReachablePolicy
-DesktopMain -> Tunnel : publish local T3 endpoint
+DesktopMain -> NitroCodeServer : switch policy to RemoteReachablePolicy
+DesktopMain -> Tunnel : publish local NitroCode endpoint
 Tunnel --> DesktopMain : public https/wss URL
 
-DesktopMain -> T3Server : issue one-time pairing token
-T3Server --> DesktopMain : pairing token
+DesktopMain -> NitroCodeServer : issue one-time pairing token
+NitroCodeServer --> DesktopMain : pairing token
 DesktopMain -> DesktopUser : show QR code / shareable URL
 
 DesktopUser -> PhoneBrowser : scan QR / open URL
 PhoneBrowser -> Tunnel : GET https://public-host/pair?token=...
-Tunnel -> T3Server : forward request
-T3Server -> T3Server : validate one-time token
-T3Server -> T3Server : create mobile browser session
-T3Server --> PhoneBrowser : Set-Cookie: session=...
-T3Server --> PhoneBrowser : redirect to app
+Tunnel -> NitroCodeServer : forward request
+NitroCodeServer -> NitroCodeServer : validate one-time token
+NitroCodeServer -> NitroCodeServer : create mobile browser session
+NitroCodeServer --> PhoneBrowser : Set-Cookie: session=...
+NitroCodeServer --> PhoneBrowser : redirect to app
 
 PhoneBrowser -> Tunnel : GET /ws + authenticated cookie
-Tunnel -> T3Server : forward websocket upgrade
-T3Server --> PhoneBrowser : websocket accepted
+Tunnel -> NitroCodeServer : forward websocket upgrade
+NitroCodeServer --> PhoneBrowser : websocket accepted
 ```
 
 ### Phone user with private network
@@ -653,26 +653,26 @@ The auth flow should stay the same.
 ```text
 Participants:
   DesktopUser   = user at the host machine
-  T3Server      = T3 server
+  NitroCodeServer      = NitroCode server
   PrivateNet    = tailscale / private LAN
   PhoneBrowser  = mobile browser
 
-DesktopUser -> T3Server : enable private-network access
-T3Server -> T3Server : switch policy to RemoteReachablePolicy
-DesktopUser -> T3Server : issue one-time pairing token
-T3Server --> DesktopUser : pairing URL / QR
+DesktopUser -> NitroCodeServer : enable private-network access
+NitroCodeServer -> NitroCodeServer : switch policy to RemoteReachablePolicy
+DesktopUser -> NitroCodeServer : issue one-time pairing token
+NitroCodeServer --> DesktopUser : pairing URL / QR
 
 DesktopUser -> PhoneBrowser : open private-network URL
 PhoneBrowser -> PrivateNet : GET http(s)://private-host/pair?token=...
-PrivateNet -> T3Server : route request
-T3Server -> T3Server : validate one-time token
-T3Server -> T3Server : create mobile browser session
-T3Server --> PhoneBrowser : Set-Cookie: session=...
-T3Server --> PhoneBrowser : redirect to app
+PrivateNet -> NitroCodeServer : route request
+NitroCodeServer -> NitroCodeServer : validate one-time token
+NitroCodeServer -> NitroCodeServer : create mobile browser session
+NitroCodeServer --> PhoneBrowser : Set-Cookie: session=...
+NitroCodeServer --> PhoneBrowser : redirect to app
 
 PhoneBrowser -> PrivateNet : GET /ws + authenticated cookie
-PrivateNet -> T3Server : websocket upgrade
-T3Server --> PhoneBrowser : websocket accepted
+PrivateNet -> NitroCodeServer : websocket upgrade
+NitroCodeServer --> PhoneBrowser : websocket accepted
 ```
 
 ### Desktop user adding new SSH hosts
@@ -687,35 +687,35 @@ Participants:
   DesktopMain   = desktop app
   SSH           = ssh transport/session
   RemoteHost    = remote machine
-  RemoteT3      = remote T3 server
+  RemoteNitroCode      = remote NitroCode server
   Frontend      = desktop renderer
 
 DesktopUser -> DesktopMain : add SSH host
 DesktopMain -> SSH : connect to remote host
-SSH -> RemoteHost : probe environment / verify t3 availability
+SSH -> RemoteHost : probe environment / verify nitrocode availability
 DesktopMain -> SSH : run remote launch command
-SSH -> RemoteHost : t3 remote launch --json
-RemoteHost -> RemoteT3 : start or reuse server
-RemoteT3 --> RemoteHost : port + environment metadata
+SSH -> RemoteHost : nitrocode remote launch --json
+RemoteHost -> RemoteNitroCode : start or reuse server
+RemoteNitroCode --> RemoteHost : port + environment metadata
 RemoteHost --> SSH : launch result JSON
 SSH --> DesktopMain : remote server details
 
 DesktopMain -> SSH : establish local port forward
 SSH --> DesktopMain : localhost:FORWARDED_PORT ready
 
-note over RemoteT3 : policy = RemoteReachablePolicy
-note over DesktopMain,RemoteT3 : desktop may use a trusted bootstrap flow here
+note over RemoteNitroCode : policy = RemoteReachablePolicy
+note over DesktopMain,RemoteNitroCode : desktop may use a trusted bootstrap flow here
 
 Frontend -> DesktopMain : request bootstrap for selected environment
 DesktopMain --> Frontend : short-lived bootstrap grant
 
-Frontend -> RemoteT3 : POST /api/auth/bootstrap via forwarded port
-RemoteT3 -> RemoteT3 : validate bootstrap grant
-RemoteT3 -> RemoteT3 : create browser session
-RemoteT3 --> Frontend : Set-Cookie: session=...
+Frontend -> RemoteNitroCode : POST /api/auth/bootstrap via forwarded port
+RemoteNitroCode -> RemoteNitroCode : validate bootstrap grant
+RemoteNitroCode -> RemoteNitroCode : create browser session
+RemoteNitroCode --> Frontend : Set-Cookie: session=...
 
-Frontend -> RemoteT3 : GET /ws + authenticated cookie
-RemoteT3 --> Frontend : websocket accepted
+Frontend -> RemoteNitroCode : GET /ws + authenticated cookie
+RemoteNitroCode --> Frontend : websocket accepted
 ```
 
 ## Storage decisions
@@ -779,7 +779,7 @@ Remote access is one reason this auth model matters, but the auth model should n
 
 Keep the design focused on:
 
-- one T3 server
+- one NitroCode server
 - one auth policy
 - multiple credential types
 - multiple future access methods

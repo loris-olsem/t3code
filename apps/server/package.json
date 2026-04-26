@@ -1,14 +1,14 @@
 {
-  "name": "t3",
+  "name": "nitrocode",
   "version": "0.0.21",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "https://github.com/pingdotgg/nitrocode",
     "directory": "apps/server"
   },
   "bin": {
-    "t3": "./dist/bin.mjs"
+    "nitrocode": "./dist/bin.mjs"
   },
   "files": [
     "dist"
@@ -38,9 +38,9 @@
   "devDependencies": {
     "@effect/language-service": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/web": "workspace:*",
+    "@nitrocode/contracts": "workspace:*",
+    "@nitrocode/shared": "workspace:*",
+    "@nitrocode/web": "workspace:*",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "effect-acp": "workspace:*",

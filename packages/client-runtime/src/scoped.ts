@@ -4,7 +4,7 @@ import type {
   ScopedProjectRef,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 
 export function scopeProjectRef(
   environmentId: EnvironmentId,

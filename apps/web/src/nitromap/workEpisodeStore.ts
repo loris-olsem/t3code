@@ -1,11 +1,11 @@
-import type { EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId, ProjectId, ThreadId } from "@nitrocode/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { createMemoryStorage } from "../lib/storage";
 import type { NitroWorkEpisodeSummary } from "./types";
 
-export const NITRO_WORK_EPISODE_STORAGE_KEY = "t3code:nitro-work-episodes:v1";
+export const NITRO_WORK_EPISODE_STORAGE_KEY = "nitrocode:nitro-work-episodes:v1";
 
 const emptyEpisodes: NitroWorkEpisodeSummary[] = [];
 
