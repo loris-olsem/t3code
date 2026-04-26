@@ -18,6 +18,7 @@ import {
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
+  NITROMAP_WS_METHODS,
   ThreadId,
   type TerminalEvent,
   WS_METHODS,
@@ -37,6 +38,7 @@ import { Open, resolveAvailableEditors } from "./open.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { NitroMapProjection } from "./nitromap/Services/NitroMapProjection.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
@@ -132,6 +134,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+      const nitroMapProjection = yield* NitroMapProjection;
       const orchestrationEngine = yield* OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
@@ -744,6 +747,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
             }),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [NITROMAP_WS_METHODS.getProjectSnapshot]: (input) =>
+          observeRpcEffect(
+            NITROMAP_WS_METHODS.getProjectSnapshot,
+            nitroMapProjection.getProjectSnapshot(input),
+            { "rpc.aggregate": "nitromap" },
+          ),
+        [NITROMAP_WS_METHODS.subscribeProject]: (input) =>
+          observeRpcStream(
+            NITROMAP_WS_METHODS.subscribeProject,
+            nitroMapProjection.subscribeProject(input),
+            { "rpc.aggregate": "nitromap" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetConfig, loadServerConfig, {

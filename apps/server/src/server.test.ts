@@ -10,6 +10,7 @@ import {
   GitCommandError,
   KeybindingRule,
   MessageId,
+  NITROMAP_WS_METHODS,
   OpenError,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
@@ -74,6 +75,7 @@ import {
   ProjectionSnapshotQuery,
   type ProjectionSnapshotQueryShape,
 } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { NitroMapProjectionLive } from "./nitromap/Layers/NitroMapProjection.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import {
   ProviderRegistry,
@@ -192,16 +194,6 @@ const makeDefaultOrchestrationThreadShell = (
     ...overrides,
   };
 };
-
-const workspaceAndProjectServicesLayer = Layer.mergeAll(
-  WorkspacePathsLive,
-  WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive)),
-  WorkspaceFileSystemLive.pipe(
-    Layer.provide(WorkspacePathsLive),
-    Layer.provide(WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive))),
-  ),
-  ProjectFaviconResolverLive,
-);
 
 const browserOtlpTracingLayer = Layer.mergeAll(
   FetchHttpClient.layer,
@@ -503,6 +495,7 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.checkpointDiffQuery,
         }),
       ),
+      Layer.provideMerge(NitroMapProjectionLive),
     );
 
     const appLayer = servedRoutesLayer.pipe(
@@ -1917,6 +1910,36 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         type: "keybindingsUpdated",
         payload: { issues: [] },
       });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc NitroMap snapshot and subscription methods", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const snapshot = yield* client[NITROMAP_WS_METHODS.getProjectSnapshot]({
+              environmentId: EnvironmentId.make("environment-local"),
+              projectId: ProjectId.make("project-1"),
+            });
+            const events = yield* client[NITROMAP_WS_METHODS.subscribeProject]({
+              environmentId: EnvironmentId.make("environment-local"),
+              projectId: ProjectId.make("project-1"),
+              lastSequence: 1,
+              lastProjectVersion: snapshot.version,
+            }).pipe(Stream.take(1), Stream.runCollect);
+            return { snapshot, events: Array.from(events) };
+          }),
+        ),
+      );
+
+      assert.equal(result.snapshot.projectId, "project-1");
+      assert.equal(result.snapshot.mapMaintenance.cartographerStatus, "not-run");
+      assert.equal(result.events[0]?.type, "nitromap.stale");
+      assert.equal(result.events[0]?.projectVersion, result.snapshot.version);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

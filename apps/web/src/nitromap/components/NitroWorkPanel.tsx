@@ -14,17 +14,19 @@ import { DirectionalSvgEdge } from "./DirectionalSvgEdge";
 
 export function NitroWorkPanel(props: {
   map: NitroProjectMap;
+  routeEpisodeId?: string | undefined;
   selection: NitroSelectionTarget | null;
   onSelect: (selection: NitroSelectionTarget) => void;
   onSelectEpisodeRoute?: (episodeId: string) => void;
 }) {
-  const { map, onSelect, onSelectEpisodeRoute, selection } = props;
+  const { map, onSelect, onSelectEpisodeRoute, routeEpisodeId, selection } = props;
   const fallbackEpisode = useMemo(() => selectDefaultEpisode(map), [map]);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(
-    fallbackEpisode?.id ?? null,
+    routeEpisodeId ?? fallbackEpisode?.id ?? null,
   );
   const selectedEpisode =
-    map.workEpisodes.find((episode) => episode.id === selectedEpisodeId) ?? fallbackEpisode;
+    map.workEpisodes.find((episode) => episode.id === selectedEpisodeId) ??
+    (selectedEpisodeId === routeEpisodeId ? null : fallbackEpisode);
   const fallbackRound = useMemo(() => selectDefaultRound(selectedEpisode), [selectedEpisode]);
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(fallbackRound?.id ?? null);
   const selectedRound =
@@ -49,12 +51,19 @@ export function NitroWorkPanel(props: {
   }, [map.workEpisodes, selection]);
 
   useEffect(() => {
+    if (routeEpisodeId) {
+      setSelectedEpisodeId(routeEpisodeId);
+    }
+  }, [routeEpisodeId]);
+
+  useEffect(() => {
     setSelectedEpisodeId((current) =>
-      current && map.workEpisodes.some((episode) => episode.id === current)
+      current &&
+      (current === routeEpisodeId || map.workEpisodes.some((episode) => episode.id === current))
         ? current
         : (fallbackEpisode?.id ?? null),
     );
-  }, [fallbackEpisode?.id, map.workEpisodes]);
+  }, [fallbackEpisode?.id, map.workEpisodes, routeEpisodeId]);
 
   useEffect(() => {
     setSelectedRoundId((current) =>
@@ -89,6 +98,17 @@ export function NitroWorkPanel(props: {
         <div className="min-h-0 border-b border-border md:border-r md:border-b-0">
           <PanelHeader title="Episodes" detail={`${map.workEpisodes.length} project episodes`} />
           <div className="grid max-h-56 content-start gap-2 overflow-auto p-3 md:max-h-none">
+            {routeEpisodeId &&
+            !map.workEpisodes.some((episode) => episode.id === routeEpisodeId) ? (
+              <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2">
+                <span className="block truncate text-xs font-medium text-foreground">
+                  Episode unavailable
+                </span>
+                <span className="mt-1 block truncate text-xs text-muted-foreground">
+                  Waiting for episode details.
+                </span>
+              </div>
+            ) : null}
             {map.workEpisodes.map((episode) => (
               <button
                 key={episode.id}

@@ -51,6 +51,12 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
+import type {
+  NitroMapGetProjectSnapshotInput,
+  NitroMapProjectSnapshot,
+  NitroMapSubscribeProjectInput,
+  NitroMapSubscriptionEvent,
+} from "./nitromap.ts";
 import type { EnvironmentId } from "./baseSchemas.ts";
 import { EditorId } from "./editor.ts";
 import { ServerSettings, type ClientSettings, type ServerSettingsPatch } from "./settings.ts";
@@ -266,6 +272,7 @@ export interface EnvironmentApi {
       callback: (status: GitStatusResult) => void,
       options?: {
         onResubscribe?: () => void;
+        onError?: (error: Error) => void;
       },
     ) => () => void;
   };
@@ -279,6 +286,7 @@ export interface EnvironmentApi {
       callback: (event: OrchestrationShellStreamItem) => void,
       options?: {
         onResubscribe?: () => void;
+        onError?: (error: Error) => void;
       },
     ) => () => void;
     subscribeThread: (
@@ -286,6 +294,19 @@ export interface EnvironmentApi {
       callback: (event: OrchestrationThreadStreamItem) => void,
       options?: {
         onResubscribe?: () => void;
+      },
+    ) => () => void;
+  };
+  nitromap: {
+    getProjectSnapshot: (
+      input: NitroMapGetProjectSnapshotInput,
+    ) => Promise<NitroMapProjectSnapshot>;
+    subscribeProject: (
+      input: NitroMapSubscribeProjectInput,
+      callback: (event: NitroMapSubscriptionEvent) => void,
+      options?: {
+        onResubscribe?: () => void;
+        onError?: (error: Error) => void;
       },
     ) => () => void;
   };

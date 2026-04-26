@@ -92,6 +92,10 @@ const rpcClientMock = {
     ),
     subscribeThread: vi.fn(() => () => undefined),
   },
+  nitromap: {
+    getProjectSnapshot: vi.fn(),
+    subscribeProject: vi.fn(() => () => undefined),
+  },
 };
 
 vi.mock("./environments/runtime", () => ({

@@ -18,6 +18,12 @@ function formatQueryDefinition(definition: NitroResponsibilityQueryDefinition): 
       return definition.paths.join(", ");
     case "concept":
       return definition.key;
+    case "event-query":
+      return definition.resourceLocator
+        ? `${definition.resourceLocator}: ${definition.eventKinds.join(", ")}`
+        : definition.eventKinds.join(", ");
+    case "derived":
+      return `${definition.source}: ${definition.description}`;
   }
 }
 
@@ -72,7 +78,14 @@ export function NitroInspectorPanel(props: { inspection: NitroInspection | null 
             <Row label="Responsibility" value={inspection.responsibility.label} />
             <Row label="Status" value={inspection.responsibility.status} />
             <Row label="Agent" value={inspection.agent?.label} />
-            <Row label="Resource" value={inspection.resource?.label} />
+            <Row
+              label="Resources"
+              value={
+                inspection.resources.length > 0
+                  ? inspection.resources.map((resource) => resource.label).join(", ")
+                  : "None"
+              }
+            />
             <Row label="Query" value={inspection.responsibility.query.label} />
             <Row label="Query kind" value={inspection.responsibility.query.definition.kind} />
             <Row
@@ -168,6 +181,34 @@ export function NitroInspectorPanel(props: { inspection: NitroInspection | null 
             <Row label="Status" value={inspection.action.status} />
             <Row label="Target" value={inspection.action.targetKind} />
             <Row label="Reason" value={inspection.action.reason} />
+          </dl>
+        ) : null}
+        {inspection?.kind === "intervention" ? (
+          <dl className="space-y-3">
+            <Row label="Intervention" value={inspection.intervention.title} />
+            <Row label="Status" value={inspection.intervention.status} />
+            <Row label="Severity" value={inspection.intervention.severity} />
+            <Row label="Summary" value={inspection.intervention.summary} />
+            <Row label="Episode" value={inspection.episode?.title} />
+            <Row label="Round" value={inspection.round?.title} />
+            <Row
+              label="Resources"
+              value={
+                inspection.resources.length > 0
+                  ? inspection.resources.map((resource) => resource.label).join(", ")
+                  : "None"
+              }
+            />
+            <Row
+              label="Responsibilities"
+              value={
+                inspection.responsibilities.length > 0
+                  ? inspection.responsibilities
+                      .map((responsibility) => responsibility.label)
+                      .join(", ")
+                  : "None"
+              }
+            />
           </dl>
         ) : null}
       </div>

@@ -100,6 +100,7 @@ export const useNitroWorkEpisodeStore = create<NitroWorkEpisodeStoreState>()(
               index: 1,
               title: "Nitro round",
               status: "running",
+              startedByMessageId: input.startedFromMessageId,
               startedByUserMessage: input.prompt,
               resultMessageId: null,
               startedAt: input.createdAt,

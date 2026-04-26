@@ -163,7 +163,6 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
-  resolveNitroEpisodeCompletion,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -184,7 +183,7 @@ import {
   getRunningNitroEpisodeForConversation,
   useNitroWorkEpisodeStore,
 } from "../nitromap/workEpisodeStore";
-import { mockNitroMapDataSource } from "../nitromap/mockData";
+import { useNitroMapAvailability } from "../nitromap/useNitroMapAvailability";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -719,7 +718,6 @@ export default function ChatView(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
-  const nitroCompletionInFlightRef = useRef(new Set<string>());
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   const terminalState = useTerminalStateStore((state) =>
@@ -861,16 +859,15 @@ export default function ChatView(props: ChatViewProps) {
     ),
   );
   const startNitroEpisode = useNitroWorkEpisodeStore((state) => state.startEpisode);
-  const finishNitroEpisode = useNitroWorkEpisodeStore((state) => state.finishEpisode);
   const discardNitroEpisode = useNitroWorkEpisodeStore((state) => state.discardEpisode);
-  const nitroMapAvailable =
-    activeProject !== undefined &&
-    mockNitroMapDataSource.hasProjectMap({
-      environmentId: activeThread?.environmentId ?? environmentId,
-      projectId: activeProject.id,
-    });
+  const nitroMapAvailability = useNitroMapAvailability({
+    environmentId: activeThread?.environmentId ?? environmentId,
+    projectId: activeProject?.id ?? null,
+    enabled: activeProject !== undefined,
+  });
   const nitroSubmitState = deriveNitroSubmitState({
-    hasProjectMap: nitroMapAvailable,
+    hasProjectMap: nitroMapAvailability.available,
+    projectMapDisabledReason: nitroMapAvailability.disabledReason,
     hasRunningEpisode: runningNitroEpisode !== null,
   });
 
@@ -1590,66 +1587,6 @@ export default function ChatView(props: ChatViewProps) {
     },
     [draftId, routeThreadRef, serverThread, setStoreThreadError],
   );
-
-  useEffect(() => {
-    const api = readEnvironmentApi(environmentId);
-    if (!api || !activeThread || !activeProject || !runningNitroEpisode) {
-      return;
-    }
-
-    const completion = resolveNitroEpisodeCompletion({
-      episode: runningNitroEpisode,
-      latestTurn: activeLatestTurn,
-    });
-    if (!completion) return;
-    if (nitroCompletionInFlightRef.current.has(runningNitroEpisode.id)) return;
-
-    const resultMessageId = newMessageId();
-    const workDetailRoute = `/projects/${encodeURIComponent(
-      activeThread.environmentId,
-    )}/${encodeURIComponent(activeProject.id)}/work/${encodeURIComponent(runningNitroEpisode.id)}`;
-
-    nitroCompletionInFlightRef.current.add(runningNitroEpisode.id);
-    void api.orchestration
-      .dispatchCommand({
-        type: "thread.nitro-round.complete",
-        commandId: newCommandId(),
-        threadId: activeThread.id,
-        messageId: resultMessageId,
-        episodeId: runningNitroEpisode.id,
-        roundIndex: 1,
-        status: completion.status,
-        workDetailRoute,
-        createdAt: completion.completedAt,
-      })
-      .then(() => {
-        finishNitroEpisode({
-          environmentId: activeThread.environmentId,
-          projectId: activeProject.id,
-          episodeId: runningNitroEpisode.id,
-          resultMessageId,
-          completedAt: completion.completedAt,
-          status: completion.status,
-        });
-      })
-      .catch((err: unknown) => {
-        setThreadError(
-          activeThread.id,
-          err instanceof Error ? err.message : "Failed to append Nitro result message.",
-        );
-      })
-      .finally(() => {
-        nitroCompletionInFlightRef.current.delete(runningNitroEpisode.id);
-      });
-  }, [
-    activeLatestTurn,
-    activeProject,
-    activeThread,
-    environmentId,
-    finishNitroEpisode,
-    runningNitroEpisode,
-    setThreadError,
-  ]);
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -2476,12 +2413,12 @@ export default function ChatView(props: ChatViewProps) {
     const isNitroSend = options?.nitro === true;
     const api = readEnvironmentApi(environmentId);
     if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
-    if (runningNitroEpisode) {
-      setThreadError(activeThread.id, "Abort or finish the running Nitro episode before sending.");
-      return;
-    }
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
+      return;
+    }
+    if (runningNitroEpisode) {
+      setThreadError(activeThread.id, "Abort or finish the running Nitro episode before sending.");
       return;
     }
     if (isNitroSend && nitroSubmitState.nitroDisabledReason) {

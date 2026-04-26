@@ -139,7 +139,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
       {
         id: routeResponsibilityId,
         agentId: uiImplementorId,
-        resourceId: routeResourceId,
+        resourceIds: [routeResourceId],
         label: "Project map routes",
         status: "watched",
         query: {
@@ -155,7 +155,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
       {
         id: canvasResponsibilityId,
         agentId: uiImplementorId,
-        resourceId: canvasResourceId,
+        resourceIds: [canvasResourceId],
         label: "Canvas and inspectors",
         status: "owned",
         query: {
@@ -170,7 +170,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
       {
         id: ownershipResponsibilityId,
         agentId: mapManagerId,
-        resourceId: ownershipResourceId,
+        resourceIds: [ownershipResourceId],
         label: "Shared project ownership map",
         status: "owned",
         query: {
@@ -186,7 +186,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
       {
         id: traceResponsibilityId,
         agentId: runtimeImplementorId,
-        resourceId: traceResourceId,
+        resourceIds: [traceResourceId],
         label: "Slack-thread style trace context",
         status: "watched",
         query: {
@@ -226,6 +226,26 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
         resourceId: traceResourceId,
       },
     ],
+    interventions: [
+      {
+        id: scopedId(scope, "intervention-trace-owner"),
+        status: "open",
+        severity: "warning",
+        title: "Trace owner should confirm injection details",
+        summary:
+          "The runtime implementor should confirm which trace result becomes visible in the main conversation.",
+        source: {
+          kind: "ownership-agent",
+          agentId: runtimeImplementorId,
+        },
+        episodeId: activeEpisodeId,
+        roundId: activeRoundTwoId,
+        relatedResourceIds: [traceResourceId],
+        relatedResponsibilityIds: [traceResponsibilityId],
+        createdAt: "2026-04-25T09:45:00.000Z",
+        resolvedAt: null,
+      },
+    ],
     workEpisodes: [
       {
         id: activeEpisodeId,
@@ -251,6 +271,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
             index: 1,
             title: "Map shell implementation",
             status: "completed",
+            startedByMessageId: scopedId(scope, "message-active-start"),
             startedByUserMessage:
               "Implement the basic UI, mock data, routes, and tests before the full Cartographer.",
             resultMessageId: scopedId(scope, "message-round-1-result"),
@@ -304,6 +325,7 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
             index: 2,
             title: "Trace and abort semantics",
             status: "running",
+            startedByMessageId: scopedId(scope, "message-round-2-start"),
             startedByUserMessage:
               "Clarify that the user should not need to coordinate traces manually, while abort remains available.",
             resultMessageId: null,
@@ -464,25 +486,19 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
     ],
     maintenance: {
       cartographerLabel: "Cartographer",
+      cartographerStatus: "ready",
       lastCheckedAt: "2026-04-25T09:50:00.000Z",
       actions: [
         {
           id: scopedId(scope, "action-watch-traces"),
+          actionKind: "update-responsibility",
           status: "proposed",
           title: "Confirm trace responsibility owner",
           reason:
             "Trace insertion is watched by runtime, but implementation ownership is not final.",
           targetId: traceResponsibilityId,
           targetKind: "responsibility",
-        },
-        {
-          id: scopedId(scope, "action-keep-map-manager"),
-          status: "accepted",
-          title: "Keep map manager under project manager",
-          reason:
-            "The management hierarchy stays explicit and separate from Cartographer maintenance.",
-          targetId: scopedId(scope, "supervision-main-map"),
-          targetKind: "supervision-edge",
+          proposedResponsibilityStatus: "owned",
         },
       ],
     },
@@ -491,9 +507,30 @@ export function buildMockNitroProjectMap(params: NitroMapRouteParams): NitroProj
 
 const mockProjectIdsWithoutNitroMap = new Set<string>(["project-without-nitro-map"]);
 
+function buildMockNitroProjectMapForDataSource(params: NitroMapRouteParams): NitroProjectMap {
+  const map = buildMockNitroProjectMap(params);
+  if (!mockProjectIdsWithoutNitroMap.has(params.projectId)) return map;
+  return {
+    ...map,
+    maintenance: {
+      ...map.maintenance,
+      cartographerStatus: "not-run",
+      lastCheckedAt: null,
+    },
+  };
+}
+
 export const mockNitroMapDataSource: NitroMapDataSource = {
-  hasProjectMap: (params) => !mockProjectIdsWithoutNitroMap.has(params.projectId),
-  getProjectMap: async (params) => buildMockNitroProjectMap(params),
+  getProjectMap: async (params) => buildMockNitroProjectMapForDataSource(params),
+  subscribeProjectMap: (params, listener) => {
+    listener({
+      kind: "snapshot",
+      map: buildMockNitroProjectMapForDataSource(params),
+      sequence: 1,
+      projectVersion: 1,
+    });
+    return () => undefined;
+  },
 };
 
 export function buildMockNitroRouteParams(input: {

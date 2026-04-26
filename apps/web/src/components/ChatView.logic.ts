@@ -26,6 +26,7 @@ export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.
 
 export function deriveNitroSubmitState(input: {
   hasProjectMap: boolean;
+  projectMapDisabledReason?: string | null;
   hasRunningEpisode: boolean;
 }): {
   regularSubmitDisabled: boolean;
@@ -34,7 +35,8 @@ export function deriveNitroSubmitState(input: {
   if (!input.hasProjectMap) {
     return {
       regularSubmitDisabled: input.hasRunningEpisode,
-      nitroDisabledReason: "Run the Cartographer before starting a Nitro episode.",
+      nitroDisabledReason:
+        input.projectMapDisabledReason ?? "Run the Cartographer before starting a Nitro episode.",
     };
   }
 

@@ -47,6 +47,7 @@ const makeNitroEpisode = (
       index: 1,
       title: "Nitro round",
       status: "running",
+      startedByMessageId: MessageId.make("message-1"),
       startedByUserMessage: "build this",
       resultMessageId: null,
       startedAt: nitroEpisodeCreatedAt,
@@ -143,6 +144,19 @@ describe("deriveNitroSubmitState", () => {
     ).toEqual({
       regularSubmitDisabled: false,
       nitroDisabledReason: "Run the Cartographer before starting a Nitro episode.",
+    });
+  });
+
+  it("keeps backend availability errors distinct from missing Cartographer state", () => {
+    expect(
+      deriveNitroSubmitState({
+        hasProjectMap: false,
+        projectMapDisabledReason: "NitroMap availability check failed: server down",
+        hasRunningEpisode: false,
+      }),
+    ).toEqual({
+      regularSubmitDisabled: false,
+      nitroDisabledReason: "NitroMap availability check failed: server down",
     });
   });
 });

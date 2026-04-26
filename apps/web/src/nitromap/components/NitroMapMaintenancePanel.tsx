@@ -19,6 +19,27 @@ export function NitroMapMaintenancePanel(props: {
         </p>
       </div>
       <div className="flex-1 space-y-3 overflow-auto p-4">
+        {map.interventions.map((intervention) => (
+          <div key={intervention.id} className="rounded-md border border-border bg-background p-3">
+            <button
+              type="button"
+              className="block w-full text-left"
+              onClick={() => onSelect({ kind: "intervention", id: intervention.id })}
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span className="truncate text-xs font-medium text-foreground">
+                  {intervention.title}
+                </span>
+                <span className="shrink-0 text-[10px] uppercase text-muted-foreground">
+                  {intervention.severity}
+                </span>
+              </span>
+              <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+                {intervention.summary}
+              </span>
+            </button>
+          </div>
+        ))}
         {map.maintenance.actions.map((action) => (
           <div
             key={action.id}

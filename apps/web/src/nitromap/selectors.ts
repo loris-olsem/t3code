@@ -1,6 +1,8 @@
 import type {
   NitroAgentInvocation,
+  NitroIntervention,
   NitroMapReconciliationAction,
+  NitroMapMaintenanceSummary,
   NitroOwnershipAgent,
   NitroOwnershipEdge,
   NitroProjectMap,
@@ -20,7 +22,7 @@ export type NitroInspection =
       kind: "responsibility";
       responsibility: NitroResponsibility;
       agent: NitroOwnershipAgent | null;
-      resource: NitroResource | null;
+      resources: NitroResource[];
     }
   | {
       kind: "supervision-edge";
@@ -54,6 +56,14 @@ export type NitroInspection =
       agent: NitroOwnershipAgent | null;
       round: NitroWorkRoundSummary | null;
       trace: NitroRoundTrace | null;
+    }
+  | {
+      kind: "intervention";
+      intervention: NitroIntervention;
+      episode: NitroWorkEpisodeSummary | null;
+      round: NitroWorkRoundSummary | null;
+      resources: NitroResource[];
+      responsibilities: NitroResponsibility[];
     }
   | { kind: "reconciliation-action"; action: NitroMapReconciliationAction };
 
@@ -108,6 +118,42 @@ export function selectInitialNitroSelection(map: NitroProjectMap): NitroSelectio
   return managementAgent ? { kind: "agent", id: managementAgent.id } : null;
 }
 
+export function selectNitroSelectionAfterMapUpdate(input: {
+  readonly map: NitroProjectMap;
+  readonly currentSelection: NitroSelectionTarget | null;
+  readonly routeEpisodeId?: string | undefined;
+  readonly forceRouteEpisodeSelection?: boolean | undefined;
+}): NitroSelectionTarget | null {
+  const routeEpisodeSelection =
+    input.routeEpisodeId &&
+    input.map.workEpisodes.some((episode) => episode.id === input.routeEpisodeId)
+      ? ({ kind: "work-episode", id: input.routeEpisodeId } as const)
+      : null;
+  if (input.forceRouteEpisodeSelection && routeEpisodeSelection) return routeEpisodeSelection;
+  if (
+    input.currentSelection &&
+    selectNitroMapInspection(input.map, input.currentSelection) !== null
+  ) {
+    return input.currentSelection;
+  }
+  return routeEpisodeSelection ?? selectInitialNitroSelection(input.map);
+}
+
+export function selectNitroMapMaintenanceNotice(
+  maintenance: NitroMapMaintenanceSummary,
+): string | null {
+  switch (maintenance.cartographerStatus) {
+    case "ready":
+      return null;
+    case "not-run":
+      return "Cartographer not run";
+    case "running":
+      return "Cartographer running";
+    case "failed":
+      return "Cartographer failed";
+  }
+}
+
 export function selectNitroMapInspection(
   map: NitroProjectMap,
   selection: NitroSelectionTarget | null,
@@ -135,8 +181,8 @@ export function selectNitroMapInspection(
       return {
         kind: "resource",
         resource,
-        responsibilities: map.responsibilities.filter(
-          (responsibility) => responsibility.resourceId === resource.id,
+        responsibilities: map.responsibilities.filter((responsibility) =>
+          responsibility.resourceIds.includes(resource.id),
         ),
       };
     }
@@ -147,8 +193,9 @@ export function selectNitroMapInspection(
         kind: "responsibility",
         responsibility,
         agent: map.agents.find((agent) => agent.id === responsibility.agentId) ?? null,
-        resource:
-          map.resources.find((resource) => resource.id === responsibility.resourceId) ?? null,
+        resources: map.resources.filter((resource) =>
+          responsibility.resourceIds.includes(resource.id),
+        ),
       };
     }
     case "supervision-edge": {
@@ -215,6 +262,26 @@ export function selectNitroMapInspection(
         agent: map.agents.find((agent) => agent.id === match.invocation.agentId) ?? null,
         round: match.round,
         trace: match.trace,
+      };
+    }
+    case "intervention": {
+      const intervention = map.interventions.find((entry) => entry.id === selection.id);
+      if (!intervention) return null;
+      return {
+        kind: "intervention",
+        intervention,
+        episode: intervention.episodeId
+          ? (map.workEpisodes.find((episode) => episode.id === intervention.episodeId) ?? null)
+          : null,
+        round: intervention.roundId
+          ? (findRoundContext(map, intervention.roundId)?.round ?? null)
+          : null,
+        resources: map.resources.filter((resource) =>
+          intervention.relatedResourceIds.includes(resource.id),
+        ),
+        responsibilities: map.responsibilities.filter((responsibility) =>
+          intervention.relatedResponsibilityIds.includes(responsibility.id),
+        ),
       };
     }
     case "reconciliation-action": {

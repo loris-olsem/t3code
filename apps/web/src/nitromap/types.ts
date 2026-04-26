@@ -4,22 +4,30 @@ export type NitroMapView = "map" | "work" | "map-maintenance";
 
 export type NitroAgentKind = "management" | "implementation";
 
-export type NitroAgentStatus = "idle" | "working" | "waiting" | "blocked";
+export type NitroAgentStatus = "idle" | "working" | "waiting" | "blocked" | "failed";
 
-export type NitroResourceKind = "file" | "directory" | "service" | "concept";
+export type NitroResourceKind =
+  | "file"
+  | "directory"
+  | "service"
+  | "concept"
+  | "generated-asset"
+  | "remote-resource"
+  | "logical-component";
 
 export type NitroResponsibilityStatus = "owned" | "watched" | "disputed";
 
 export type NitroOwnershipTraceStatus =
   | "pending"
   | "injected"
+  | "not-injected"
   | "failure-injected"
   | "aborted"
   | "failed";
 
 export type NitroInterventionStatus = "open" | "accepted" | "declined";
 
-export type NitroReconciliationActionStatus = "proposed" | "accepted" | "declined";
+export type NitroReconciliationActionStatus = "proposed" | "accepted" | "declined" | "applied";
 
 export interface NitroMapRouteParams {
   environmentId: EnvironmentId;
@@ -27,9 +35,30 @@ export interface NitroMapRouteParams {
 }
 
 export interface NitroMapDataSource {
-  hasProjectMap(params: NitroMapRouteParams): boolean;
   getProjectMap(params: NitroMapRouteParams): Promise<NitroProjectMap>;
+  subscribeProjectMap(
+    params: NitroMapRouteParams,
+    listener: (event: NitroProjectMapSubscriptionEvent) => void,
+  ): () => void;
 }
+
+export type NitroProjectMapSubscriptionEvent =
+  | {
+      kind: "snapshot";
+      map: NitroProjectMap;
+      sequence: number;
+      projectVersion: number;
+    }
+  | {
+      kind: "stale";
+      reason: string;
+      sequence: number;
+      projectVersion: number;
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
 
 export interface NitroProjectMap {
   project: {
@@ -42,6 +71,7 @@ export interface NitroProjectMap {
   resources: NitroResource[];
   responsibilities: NitroResponsibility[];
   ownershipEdges: NitroOwnershipEdge[];
+  interventions: NitroIntervention[];
   workEpisodes: NitroWorkEpisodeSummary[];
   maintenance: NitroMapMaintenanceSummary;
 }
@@ -78,7 +108,7 @@ export interface NitroResource {
 export interface NitroResponsibility {
   id: string;
   agentId: string;
-  resourceId: string;
+  resourceIds: string[];
   label: string;
   status: NitroResponsibilityStatus;
   query: NitroResponsibilityQuery;
@@ -102,6 +132,16 @@ export type NitroResponsibilityQueryDefinition =
   | {
       kind: "concept";
       key: string;
+    }
+  | {
+      kind: "event-query";
+      eventKinds: string[];
+      resourceLocator?: string;
+    }
+  | {
+      kind: "derived";
+      source: "mock" | "future-indexer";
+      description: string;
     };
 
 export interface NitroOwnershipEdge {
@@ -119,10 +159,18 @@ export interface NitroWorkEpisodeSummary {
   startedFromMessageId: string;
   mainAgent: {
     label: string;
-    status: "working" | "waiting" | "aborted" | "failed" | "completed";
+    status: "idle" | "working" | "waiting" | "aborting" | "aborted" | "failed" | "completed";
   };
   title: string;
-  status: "running" | "waiting" | "blocked" | "aborted" | "failed" | "completed";
+  status:
+    | "idle"
+    | "running"
+    | "waiting"
+    | "blocked"
+    | "aborting"
+    | "aborted"
+    | "failed"
+    | "completed";
   backingThreadId: ThreadId | null;
   transcriptRoute: string | null;
   latestUserMessage: string;
@@ -137,7 +185,8 @@ export interface NitroWorkRoundSummary {
   episodeId: string;
   index: number;
   title: string;
-  status: "running" | "waiting" | "blocked" | "aborted" | "failed" | "completed";
+  status: "running" | "waiting" | "blocked" | "aborting" | "aborted" | "failed" | "completed";
+  startedByMessageId: string;
   startedByUserMessage: string;
   resultMessageId: string | null;
   startedAt: string;
@@ -164,7 +213,8 @@ export interface NitroWorkEpisodeAction {
     | "open-failure-detail"
     | "answer-input"
     | "decide-approval"
-    | "retry-turn";
+    | "retry-turn"
+    | "abort-episode";
   label: string;
   disabled: boolean;
 }
@@ -199,17 +249,70 @@ export interface NitroAgentInvocation {
 
 export interface NitroMapMaintenanceSummary {
   cartographerLabel: string;
-  lastCheckedAt: string;
+  cartographerStatus: "not-run" | "ready" | "running" | "failed";
+  lastCheckedAt: string | null;
   actions: NitroMapReconciliationAction[];
 }
 
-export interface NitroMapReconciliationAction {
+interface NitroMapReconciliationActionBase {
   id: string;
   status: NitroReconciliationActionStatus;
   title: string;
   reason: string;
   targetId: string;
-  targetKind: "agent" | "resource" | "responsibility" | "supervision-edge";
+  targetKind: "agent" | "resource" | "responsibility" | "ownership-edge" | "supervision-edge";
+}
+
+export type NitroMapReconciliationAction =
+  | (NitroMapReconciliationActionBase & {
+      actionKind: "update-responsibility";
+      targetKind: "responsibility";
+      proposedResponsibilityStatus?: NitroResponsibilityStatus;
+    })
+  | (NitroMapReconciliationActionBase & {
+      actionKind:
+        | "create-agent"
+        | "update-agent"
+        | "delete-agent"
+        | "create-resource"
+        | "update-resource"
+        | "delete-resource"
+        | "create-responsibility"
+        | "delete-responsibility"
+        | "create-ownership-edge"
+        | "delete-ownership-edge"
+        | "create-supervision-edge"
+        | "delete-supervision-edge";
+    });
+
+export interface NitroIntervention {
+  id: string;
+  status: NitroInterventionStatus;
+  severity: "info" | "warning" | "blocking";
+  title: string;
+  summary: string;
+  source:
+    | {
+        kind: "ownership-agent";
+        agentId: string;
+      }
+    | {
+        kind: "work-episode";
+        episodeId: string;
+      }
+    | {
+        kind: "cartographer";
+      }
+    | {
+        kind: "system";
+      }
+    | null;
+  episodeId: string | null;
+  roundId: string | null;
+  relatedResourceIds: string[];
+  relatedResponsibilityIds: string[];
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export type NitroSelectionTarget =
@@ -222,4 +325,5 @@ export type NitroSelectionTarget =
   | { kind: "work-round"; id: string }
   | { kind: "round-trace"; id: string }
   | { kind: "agent-invocation"; id: string }
+  | { kind: "intervention"; id: string }
   | { kind: "reconciliation-action"; id: string };

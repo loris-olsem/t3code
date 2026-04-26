@@ -5,6 +5,9 @@ import {
   type GitStatusResult,
   type GitStatusStreamEvent,
   type LocalApi,
+  NITROMAP_WS_METHODS,
+  type NitroMapSubscribeProjectInput,
+  type NitroMapSubscriptionEvent,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
   WS_METHODS,
@@ -22,6 +25,7 @@ type RpcInput<TTag extends RpcTag> = Parameters<RpcMethod<TTag>>[0];
 
 interface StreamSubscriptionOptions {
   readonly onResubscribe?: () => void;
+  readonly onError?: (error: Error) => void;
 }
 
 type RpcUnaryMethod<TTag extends RpcTag> =
@@ -118,6 +122,10 @@ export interface WsRpcClient {
     readonly getFullThreadDiff: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.getFullThreadDiff>;
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
+  };
+  readonly nitromap: {
+    readonly getProjectSnapshot: RpcUnaryMethod<typeof NITROMAP_WS_METHODS.getProjectSnapshot>;
+    readonly subscribeProject: RpcInputStreamMethod<typeof NITROMAP_WS_METHODS.subscribeProject>;
   };
 }
 
@@ -251,6 +259,26 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           listener,
           options,
         ),
+    },
+    nitromap: {
+      getProjectSnapshot: (input) =>
+        transport.request((client) => client[NITROMAP_WS_METHODS.getProjectSnapshot](input)),
+      subscribeProject: (input, listener, options) => {
+        let cursor: NitroMapSubscribeProjectInput = input;
+        return transport.subscribe(
+          (client) => client[NITROMAP_WS_METHODS.subscribeProject](cursor),
+          (event: NitroMapSubscriptionEvent) => {
+            cursor = {
+              environmentId: input.environmentId,
+              projectId: input.projectId,
+              lastSequence: event.sequence,
+              lastProjectVersion: event.projectVersion,
+            };
+            listener(event);
+          },
+          options,
+        );
+      },
     },
   };
 }

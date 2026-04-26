@@ -30,6 +30,7 @@ interface OrchestrationHandlers {
     environmentId: EnvironmentId,
   ) => void;
   readonly applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => void;
+  readonly handleShellResubscribe?: (environmentId: EnvironmentId) => void;
 }
 
 interface EnvironmentConnectionInput extends OrchestrationHandlers {
@@ -130,6 +131,7 @@ export function createEnvironmentConnection(
           return;
         }
         bootstrapGate.reset();
+        input.handleShellResubscribe?.(environmentId);
       },
     },
   );

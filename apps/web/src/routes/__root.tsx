@@ -14,6 +14,7 @@ import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { NitroMapAppLayout } from "../components/NitroMapAppLayout";
+import { NitroEpisodeCompletionCoordinator } from "../nitromap/NitroEpisodeCompletionCoordinator";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -102,6 +103,7 @@ function RootRouteView() {
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap />
         <EnvironmentConnectionManagerBootstrap />
+        <NitroEpisodeCompletionCoordinator />
         <EventRouter />
         <WebSocketConnectionCoordinator />
         <SlowRpcAckToastCoordinator />
