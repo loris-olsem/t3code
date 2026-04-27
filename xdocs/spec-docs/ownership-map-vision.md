@@ -144,9 +144,13 @@ The Cartographer is implemented as a skill outside the ownership-agent graph. It
 - delete agents whose role no longer exists
 - update ownership hierarchy when concrete and abstract scopes overlap
 
-Ownership agents do not experience these changes as external edits to their personality. From an individual ownership agent's point of view, its current role is simply what it is. The Cartographer can modify an agent's core behavior and responsibility behind the scenes, and the agent should act according to the latest assigned scope.
+Ownership agents do not experience these changes as external edits to their personality. From an individual ownership agent's point of view, its current role is simply what it is. The Cartographer can modify an agent's core behavior and responsibility through validated map-maintenance changes, and the agent should act according to the latest assigned scope.
 
-The Cartographer should not be in the hot path for every normal work review. Its primary responsibility is maintaining the ownership graph and the routing rules that make agent activation predictable. Normal implementation and management agents participate in work rounds; the Cartographer wakes for map-maintenance events.
+The Cartographer should not be in the hot path for every normal work review. Its primary responsibility is maintaining the ownership graph and the routing rules that make agent activation predictable. Normal implementation and management agents participate in work rounds; Cartographer work is triggered only through visible Map Maintenance reconciliation flows.
+
+Cartographer work happens through specially marked project conversations. A project may have more than one Cartographer conversation, although the expected product path is to reuse one. An empty Cartographer conversation should offer an initialization helper that inserts a prompt into the chatbox. If the project already has a validated ownership map, the helper becomes a reinitialization prompt and must make clear that existing ownership data will be replaced after validation.
+
+The ownership map includes the prompt configuration used to spawn each ownership agent. The Cartographer chooses agent roles, prompt-template ids, project-specific scope text, responsibilities, and supervision edges. NitroCode owns the baked base behavior, allowed prompt-template library, output format requirements, and episode lifecycle rules. External skills may inspire template design, but NitroCode should use its own prompt text unless copying is explicitly licensed and attributed.
 
 The Cartographer should operate as a reconciler skill:
 
@@ -160,7 +164,7 @@ current ownership map + reconciliation reason + bounded evidence
 
 It should return structured map updates, not conversational advice. The application applies those updates only after validating that agent references, file matchers, and supervision edges remain coherent.
 
-Cartographer wake events should be concrete and structured, for example:
+Cartographer reconciliation reasons should be concrete and structured, for example:
 
 - project initialized
 - user requested ownership recomputation
@@ -172,7 +176,7 @@ Cartographer wake events should be concrete and structured, for example:
 - a responsibility query became stale
 - the user corrected an ownership assignment
 
-This keeps the Cartographer reliable and auditable. It maintains the organization; it does not become an invisible extra reviewer for every file change.
+These reasons may be proposed by system detection or chosen by the user, but applying changes must remain visible through Map Maintenance history and validation. This keeps the Cartographer reliable and auditable. It maintains the organization; it does not become an invisible extra reviewer for every file change.
 
 The Cartographer skill's output should be JSON with a summary and a list of map reconciliation actions. Actions should cover real reconciliation operations:
 
@@ -245,6 +249,20 @@ type OwnershipAgent = {
    * scope by updating this purpose and the supervision edges around the agent.
    */
   purpose: string;
+
+  /**
+   * Durable prompt assembly settings selected by the Cartographer and
+   * validated by NitroCode. Runtime context is still episode-local; this config
+   * only describes how to spawn the agent for an episode.
+   */
+  promptConfig: {
+    basePolicyId: string;
+    behaviorTemplateId: string;
+    roleTemplateId: string;
+    roleTemplateVersion: number;
+    projectScope: string;
+    spawnMode: "episode-local";
+  };
 
   status: "active" | "stale" | "disabled";
 
@@ -803,7 +821,7 @@ This makes the application understandable as a project organization, not a many-
 
 A new conversation creates fresh main-agent conversational state, but it does not reset the ownership map or mutate state for other active conversations or episodes.
 
-The map is project memory. It persists until the user explicitly asks to recompute it from scratch or until the system applies a partial recomputation heuristic.
+The map is project memory. It persists until the user explicitly asks to recompute it from scratch or until a visible Map Maintenance reconciliation applies a validated partial update.
 
 Conversations in the same project share the same ownership map and agent definitions, but they do not share the same main agent. Each conversation is a separate main-agent thread. A Nitro episode is a separate work object attached to one conversation, and the same conversation can have many episodes over time.
 
@@ -819,7 +837,7 @@ Expected reset behavior:
 - agent definitions, scopes, hierarchy, and Cartographer-maintained organization persist
 - ownership agents remain memory-light; do not add separate long-term per-agent memory beyond the durable ownership map in the first implementation
 - the user can explicitly request a full ownership-map recompute
-- the system may perform partial recomputation when project structure changes enough to justify it
+- the system may propose partial recomputation when project structure changes enough to justify it, but applied changes must go through visible Map Maintenance reconciliation and validation
 
 The distinction matters because the ownership map represents project organization, not chat history.
 
@@ -838,7 +856,7 @@ Map evolution can be triggered by:
 - stale scopes with no matching artifacts
 - new remote resources
 - user corrections
-- scheduled Cartographer audit
+- scheduled Cartographer audit proposal
 - explicit recompute commands
 
 The system should prefer stable, predictable ownership over excessive churn. A map that changes constantly will be hard for users and agents to trust.

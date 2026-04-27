@@ -14,6 +14,8 @@ Milestone 6 contract preparation is represented by schema-only NitroMap contract
 
 Milestone 7 adds the first backend projection scaffold: `nitromap.getProjectSnapshot` and `nitromap.subscribeProject` are typed websocket RPCs served by a project-scoped `NitroMapProjection` service. The web route consumes the project subscription and can render the seeded projection, but the Nitro button derives episode availability from the backend snapshot's Cartographer status. Seeded projection data is allowed to exercise the UI and contract boundary, but it is not treated as Cartographer output; it reports `cartographerStatus: "not-run"` until a real Cartographer source replaces the scaffold. No NitroMap persistence migration exists yet because there is no durable source-of-truth record to store; persistence belongs with the real ownership data in the next source-replacement unit.
 
+The next source-replacement unit is defined in `cartographer-planning.md`. That plan covers Cartographer conversations, initialization and reinitialization UX, durable prompt configuration, and the replacement of seeded projection data with validated project ownership data.
+
 ## Current Constraints
 
 The current product is deeply thread-centric.
@@ -95,6 +97,8 @@ Existing concepts should map as follows:
 - current proposed plans -> possible work-episode artifacts
 - current checkpoints/diffs -> changed resources and result inspection
 - current branch/worktree controls -> execution-context controls, not ownership model
+
+The Cartographer is a separate map-maintenance reconciler, not an ownership agent. Cartographer conversations are specially marked project conversations used to initialize, reinitialize, inspect, and maintain the project map. Ownership agents are the durable implementation and management roles created by the Cartographer and later activated during Nitro episodes.
 
 This lets current functionality continue while the product language changes.
 
@@ -335,11 +339,11 @@ Work flow during preparation:
 
 - `Start work` appears in the compact work panel and on the `/work` route.
 - In Milestones 3-4, `Start work` is visible as a disabled, non-interactive affordance. It must not open a composer, create a mock episode, mutate state, call the adapter, or create/link threads.
-- Milestone 5 is the first milestone where Nitro submit may create/link backing execution state and dispatch `thread.turn.start` through the work-episode adapter.
+- Milestone 5 is the first milestone where Nitro submit may create/link backing execution state and dispatch `thread.turn.start` through the work-episode adapter, but only when the project snapshot reports a validated ownership map. In the current preparation contract that is represented by `cartographerStatus: "ready"`; Milestone 8 should split this into map readiness and Cartographer run status. Before Milestone 8 replaces seeded projection data with durable Cartographer sources, that ready state may exist only in explicit tests or development fixtures.
 - In Milestone 5, episode creation comes from the Nitro composer button in the conversation, not from a second independent Work prompt flow. A Work-surface `Start work` affordance should route or focus the user toward the current conversation composer/Nitro path until a separate prompt design is intentionally specified.
 - The composer should display a project-map icon adjacent to the Nitro button. That icon is informational navigation/context, while the Nitro button remains the episode-start action.
 - Nitro submit requires a project ownership map. If the Cartographer has not yet run for the project, the Nitro button must be disabled and its hover text should tell the user to run the Cartographer first.
-- A successful Milestone 5 Nitro submit routes or deep-links to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active when opened, and shows the new work episode detail. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current route with a project-scoped error and no unrelated thread opens.
+- A successful Milestone 5 Nitro submit routes or deep-links to `/projects/$environmentId/$projectId/work/$episodeId`, sets Work active when opened, and shows the new work episode detail. In production-like seeded projection state this remains blocked because `cartographerStatus` is `not-run`; adapter-backed success paths use validated ready fixtures until Milestone 8 provides durable Cartographer ownership data. If creation/linking fails or the episode mapping cannot be validated, the user remains on the current route with a project-scoped error and no unrelated thread opens.
 - `/work` lists active, blocked, and recent episodes for the project.
 - `/work/$episodeId` shows compact work detail, blocking items, changed-resource summaries when available, and an open-transcript action only when `transcriptRoute` is non-null.
 - If no active episode exists, the work panel shows the start-work entry point rather than opening an empty transcript.
@@ -409,6 +413,11 @@ interface NitroMapLayout {
 }
 
 interface NitroMapMaintenanceSummary {
+  /**
+   * Preparation-era collapsed field. Milestone 8 should split this into
+   * mapReadiness and cartographerRunStatus so a failed reinitialization can
+   * preserve the previous ready map.
+   */
   cartographerStatus: "not-run" | "ready" | "running" | "failed";
   latestActionIds: string[];
   disabledReason?: string;
@@ -899,7 +908,7 @@ Backend preparation must distinguish source of truth from projection:
 
 Any seeded or fake backend data must be clearly named `mock` or `experimental`, must not be exposed as production behavior by default, and must include a removal or migration path.
 
-Seeded projection snapshots may contain resources, agents, responsibilities, work episodes, and traces so that the UI can be exercised end-to-end. That data answers "can the projection boundary render a project map?" only. It does not answer "may Nitro start an episode?". Episode availability is controlled by `mapMaintenance.cartographerStatus`; only `ready` means the Cartographer has produced an ownership map.
+Seeded projection snapshots may contain resources, agents, responsibilities, work episodes, and traces so that the UI can be exercised end-to-end. That data answers "can the projection boundary render a project map?" only. It does not answer "may Nitro start an episode?". During preparation, episode availability is controlled by `mapMaintenance.cartographerStatus`; only `ready` means the Cartographer has produced an ownership map. Milestone 8 should replace this collapsed field with explicit `mapReadiness` and `cartographerRunStatus` so failed reinitialization can preserve the previous validated map.
 
 ## Quality Conventions To Preserve
 
@@ -1069,7 +1078,7 @@ Use these stories to decide whether the mocked preparation UI is coherent before
 | Inspect round trace                     | a round has ownership traces                                              | the user selects a trace or invocation                        | the detail panel shows the concrete agent state, trigger, status, and whether the trace was injected into the main thread                        | 4                 |
 | Review work-linked intervention         | a work-episode-linked intervention exists                                 | the user selects it from Work                                 | the project-scoped work detail opens when the episode mapping is validated; otherwise the Work list fallback appears                             | 5                 |
 | Start work placeholder                  | the shell is at Milestone 4                                               | the user sees Start work                                      | the affordance is visibly disabled/non-interactive, creates no episode, calls no adapter mutation, and cannot link a backing thread              | 4                 |
-| Start episode with Nitro                | the shell is at Milestone 5 or later and no episode is running            | the user clicks Nitro submit from a conversation composer     | the action goes through `NitroWorkEpisodeAdapter`, creates a new episode for that conversation, starts the first round, and links to Work detail | 5                 |
+| Start episode with Nitro                | the shell is at Milestone 5 or later, no episode is running, and `cartographerStatus` is `ready` from validated ownership data or an explicit ready fixture | the user clicks Nitro submit from a conversation composer     | the action goes through `NitroWorkEpisodeAdapter`, creates a new episode for that conversation, starts the first round, and links to Work detail | 5                 |
 | Show Nitro map context                  | the conversation composer is visible                                      | the user looks at the submit controls                         | a project-map icon appears adjacent to the Nitro button                                                                                          | 5                 |
 | Block Nitro before Cartographer         | the Cartographer has not yet produced a project ownership map             | the user hovers the Nitro button                              | Nitro is disabled and the hover text tells the user to run the Cartographer first                                                                | 5                 |
 | Regular submit stays ordinary           | no episode is running for the conversation                                | the user presses Enter or clicks the regular send button      | the existing main-agent chat flow runs and no work episode is created                                                                            | 5                 |
@@ -1168,8 +1177,10 @@ Quality bar:
 Outcome:
 
 - Nitro submit can create a work episode attached to the current project conversation
+- Nitro submit remains blocked unless the project snapshot reports `cartographerStatus: "ready"`; before Milestone 8 this can be exercised only through explicit ready fixtures or tests, not seeded production-like projection data
 - one conversation can create many episodes over time
 - each episode has a distinct `episodeId` even when it shares the same conversation thread as earlier episodes
+- each episode pins the ownership-map version it started with so map reinitialization during an episode does not change that episode's activation or trace semantics
 - existing `thread.turn.start` still drives provider execution
 - regular composer submit remains an ordinary main-agent message when no episode is running and does not create a work episode
 - regular composer submit is blocked while a Nitro episode is running for that conversation
@@ -1188,6 +1199,7 @@ Quality bar:
 - provider execution remains unchanged
 - thread id is not the user-facing product identity in new UI
 - each project can have many conversations, each conversation can have many episodes, and all episodes share the project ownership map
+- each episode stores the `ownershipMapVersion` used at episode start
 - each episode has separate round, trace, blocker, result-message, and abort state
 - each episode has separate ownership-agent runtime context; that context can span rounds inside the episode but must not leak into another episode
 - no duplicated send-turn logic
@@ -1235,21 +1247,36 @@ Quality bar:
 - source-of-truth records are separated from derived projections
 - seeded projection data is explicitly named and has a removal path when Cartographer output exists
 
-### Milestone 8: Replace Mocks With Real Sources Incrementally
+### Milestone 8: Replace Seeded Projection With Durable Cartographer Sources
 
 Outcome:
 
-- resources can be derived from workspace/git/project data
-- responsibilities can be persisted
-- map reconciliation actions can be recorded
-- interventions can be projected from activity/provider/git/diff signals
+- durable project ownership-map storage exists for agents, file responsibilities, supervision edges, prompt configuration, and reconciliation batches
+- map readiness is modeled separately from Cartographer run status so failed reinitialization can preserve the previous validated map
+- project snapshots read from validated ownership data instead of seeded projection data
+- a projection builder derives contract-valid resources, ownership edges, and stable layout positions from durable responsibilities
+- Cartographer conversations are specially marked project conversations
+- the Cartographer conversation marker is durable across restart and visible through thread/conversation shell and detail read models
+- one active Cartographer conversation can apply map changes for a project, and applying changes requires a project-level Cartographer run lock
+- Map Maintenance can open or create a Cartographer conversation
+- empty Cartographer conversations can insert an `Initialize project map` prompt
+- initialized projects can insert a clearly destructive `Reinitialize project map` prompt
+- initialization and reinitialization create visible typed pending batches before apply; Milestone 8 does not depend on hidden parsing of Cartographer chat prose
+- prompt-template ids and versions are validated before an ownership map becomes ready
+- `mapReadiness: "ready"` means a validated map exists and Nitro submit can be enabled; any retained `cartographerStatus` is compatibility display state, not the gating source
 
 Quality bar:
 
-- each mock replacement is behind the same interface
-- no UI rewrite required when real data arrives
-- resource identity rules remain stable as real data replaces mocks
+- implementation follows `cartographer-planning.md`
+- seeded projection data remains available only as an explicit development fixture, not as the product source of truth
+- no UI rewrite is required when durable ownership data replaces seeded data
+- reinitialization replaces ownership data only after final-state validation passes
+- failed initialization leaves the project not-ready; failed reinitialization keeps the previous validated map active
+- committed batch ids and resulting map versions are server-assigned and monotonic
+- no hidden cross-episode ownership-agent runtime state is introduced
 - map reconciliation actions, interventions, and work episodes keep distinct domain meanings
+- existing seeded NitroMap projection tests are not sufficient for this milestone; they remain scaffold coverage only
+- tests cover durable map validation, prompt-template references, map-readiness gating, initialization failure with no map, failed reinitialization preserving the previous map, stale base version rejection, server-assigned version monotonicity, duplicate batch rejection, active Cartographer conversation enforcement, project run-lock enforcement, episode map-version pinning, atomic no-partial-write behavior, durable reload after restart, project isolation, ordered subscription updates, and project-scoped snapshot updates
 
 ## Non-Goals For Preparation
 
