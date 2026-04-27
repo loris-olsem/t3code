@@ -4,12 +4,12 @@ import {
   readPathFromLaunchctl,
   readEnvironmentFromLoginShell,
   resolveWindowsEnvironment,
-} from "@t3tools/shared/shell";
+} from "@nitrocode/shared/shell";
 import type {
   CommandAvailabilityOptions,
   ShellEnvironmentReader,
   WindowsShellEnvironmentReader,
-} from "@t3tools/shared/shell";
+} from "@nitrocode/shared/shell";
 
 type WindowsCommandAvailabilityChecker = (
   command: string,

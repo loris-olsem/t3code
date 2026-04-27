@@ -4,7 +4,7 @@ import type {
   ProviderOptionDescriptor,
   ProviderOptionSelection,
   ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,

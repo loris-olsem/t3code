@@ -12,12 +12,12 @@ import type {
   ServerProvider,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { createModelSelection, normalizeModelSlug } from "@nitrocode/shared/model";
 import {
   forwardRef,
   memo,
@@ -64,7 +64,11 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import {
+  ComposerPrimaryActions,
+  NitroMapContextButton,
+  NitroSubmitButton,
+} from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -100,7 +104,7 @@ import {
   getProviderModels,
   resolveSelectableProvider,
 } from "../../providerModels";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@nitrocode/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
@@ -432,6 +436,10 @@ export interface ChatComposerProps {
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }) => void;
+  onNitroSend: () => void;
+  regularSubmitDisabled: boolean;
+  nitroDisabled: boolean;
+  nitroDisabledReason: string | null;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -515,6 +523,10 @@ export const ChatComposer = memo(
       shouldAutoScrollRef,
       scheduleStickToBottom,
       onSend,
+      onNitroSend,
+      regularSubmitDisabled,
+      nitroDisabled,
+      nitroDisabledReason,
       onInterrupt,
       onImplementPlanInNewThread,
       onRespondToApproval,
@@ -618,6 +630,13 @@ export const ChatComposer = memo(
       () => createModelSelection(selectedProvider, selectedModel, selectedModelOptionsForDispatch),
       [selectedModel, selectedModelOptionsForDispatch, selectedProvider],
     );
+    const nitroMapRouteTarget =
+      activeThread?.environmentId && activeThread.projectId
+        ? {
+            environmentId: activeThread.environmentId,
+            projectId: activeThread.projectId,
+          }
+        : null;
     const selectedModelForPicker = selectedModel;
     const modelOptionsByProvider = useMemo<
       Record<ProviderKind, ReadonlyArray<ServerProvider["models"][number]>>
@@ -1886,7 +1905,10 @@ export const ChatComposer = memo(
                   isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                 )}
               >
-                <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div
+                  data-chat-composer-actions="left"
+                  className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
                   <ProviderModelPicker
                     compact={isComposerFooterCompact}
                     provider={selectedProvider}
@@ -1948,6 +1970,22 @@ export const ChatComposer = memo(
                       />
                     </>
                   )}
+                  {nitroMapRouteTarget ? (
+                    <NitroMapContextButton
+                      environmentId={nitroMapRouteTarget.environmentId}
+                      projectId={nitroMapRouteTarget.projectId}
+                    />
+                  ) : null}
+                  <NitroSubmitButton
+                    disabled={
+                      nitroDisabled ||
+                      isSendBusy ||
+                      isConnecting ||
+                      !composerSendState.hasSendableContent
+                    }
+                    disabledReason={nitroDisabledReason}
+                    onNitroSend={onNitroSend}
+                  />
                 </div>
 
                 {/* Right side: send / stop button */}
@@ -1970,7 +2008,9 @@ export const ChatComposer = memo(
                     isSendBusy={isSendBusy}
                     isConnecting={isConnecting}
                     isPreparingWorktree={isPreparingWorktree}
-                    hasSendableContent={composerSendState.hasSendableContent}
+                    hasSendableContent={
+                      composerSendState.hasSendableContent && !regularSubmitDisabled
+                    }
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

@@ -1,5 +1,5 @@
 import * as nodePath from "node:path";
-import { type ServerProvider, ServerProvider as ServerProviderSchema } from "@t3tools/contracts";
+import { type ServerProvider, ServerProvider as ServerProviderSchema } from "@nitrocode/contracts";
 import { Cause, Effect, FileSystem, Schema } from "effect";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";

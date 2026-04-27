@@ -5,8 +5,8 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 

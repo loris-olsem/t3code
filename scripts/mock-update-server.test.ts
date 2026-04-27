@@ -3,6 +3,8 @@ import { NodeHttpServer } from "@effect/platform-node";
 import { assert, it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Path } from "effect";
 import { HttpClient, HttpRouter } from "effect/unstable/http";
+import * as NodeFs from "node:fs/promises";
+import * as NodeProcess from "node:process";
 
 import { makeMockUpdateRouteLayer } from "./mock-update-server.ts";
 
@@ -83,11 +85,11 @@ it.layer(NodeServices.layer)("mock-update-server", (it) => {
       const rootRealPath = yield* fileSystem.realPath(root);
       const outsideFile = path.join(outside, "outside.yml");
       const linksDir = path.join(root, "links");
-      const symlinkPath = path.join(linksDir, "outside.yml");
 
       yield* fileSystem.writeFileString(outsideFile, "version: outside\n");
-      yield* fileSystem.makeDirectory(linksDir, { recursive: true });
-      yield* fileSystem.symlink(outsideFile, symlinkPath);
+      yield* Effect.promise(() =>
+        NodeFs.symlink(outside, linksDir, NodeProcess.platform === "win32" ? "junction" : "dir"),
+      );
 
       yield* withMockUpdateServer(
         rootRealPath,

@@ -76,7 +76,8 @@ import {
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
 } from "./orchestration/http.ts";
-import { NetService } from "@t3tools/shared/Net";
+import { NetService } from "@nitrocode/shared/Net";
+import { NitroMapProjectionLive } from "./nitromap/Layers/NitroMapProjection.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -237,6 +238,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),
+  Layer.provideMerge(NitroMapProjectionLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
 

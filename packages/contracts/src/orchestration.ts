@@ -608,6 +608,20 @@ const ThreadSessionStopCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const NitroRoundCompletionStatus = Schema.Literals(["completed", "failed", "aborted"]);
+
+const ThreadNitroRoundCompleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.nitro-round.complete"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  episodeId: TrimmedNonEmptyString,
+  roundIndex: NonNegativeInt,
+  status: NitroRoundCompletionStatus,
+  workDetailRoute: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -620,6 +634,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadTurnStartCommand,
+  ThreadNitroRoundCompleteCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
@@ -641,6 +656,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ClientThreadTurnStartCommand,
+  ThreadNitroRoundCompleteCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,

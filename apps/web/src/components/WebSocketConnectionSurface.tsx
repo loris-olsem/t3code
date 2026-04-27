@@ -11,7 +11,7 @@ import {
   WS_RECONNECT_MAX_ATTEMPTS,
 } from "../rpc/wsConnectionState";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { getPrimaryEnvironmentConnection } from "../environments/runtime";
+import { reconnectPrimaryEnvironment } from "../environments/runtime";
 
 const FORCED_WS_RECONNECT_DEBOUNCE_MS = 5_000;
 type WsAutoReconnectTrigger = "focus" | "online";
@@ -54,7 +54,7 @@ function describeExhaustedToast(): string {
 }
 
 function buildReconnectTitle(_status: WsConnectionStatus): string {
-  return "Disconnected from T3 Server";
+  return "Disconnected from NitroCode Server";
 }
 
 function describeRecoveredToast(
@@ -152,26 +152,23 @@ export function WebSocketConnectionCoordinator() {
       toastResetTimerRef.current = null;
     }
     lastForcedReconnectAtRef.current = Date.now();
-    void getPrimaryEnvironmentConnection()
-      .reconnect()
-      .catch((error) => {
-        if (!showFailureToast) {
-          console.warn("Automatic WebSocket reconnect failed", { error });
-          return;
-        }
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Reconnect failed",
-            description:
-              error instanceof Error ? error.message : "Unable to restart the WebSocket.",
-            data: {
-              dismissAfterVisibleMs: 8_000,
-              hideCopyButton: true,
-            },
-          }),
-        );
-      });
+    void reconnectPrimaryEnvironment().catch((error) => {
+      if (!showFailureToast) {
+        console.warn("Automatic WebSocket reconnect failed", { error });
+        return;
+      }
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Reconnect failed",
+          description: error instanceof Error ? error.message : "Unable to restart the WebSocket.",
+          data: {
+            dismissAfterVisibleMs: 8_000,
+            hideCopyButton: true,
+          },
+        }),
+      );
+    });
   });
   const syncBrowserOnlineStatus = useEffectEvent(() => {
     setBrowserOnlineStatus(navigator.onLine !== false);
@@ -297,7 +294,7 @@ export function WebSocketConnectionCoordinator() {
               },
               description: describeExhaustedToast(),
               timeout: 0,
-              title: "Disconnected from T3 Server",
+              title: "Disconnected from NitroCode Server",
               type: "error",
             })
           : stackedThreadToast({
@@ -334,7 +331,7 @@ export function WebSocketConnectionCoordinator() {
     ) {
       const successToast = {
         description: describeRecoveredToast(previousDisconnectedAt, status.connectedAt),
-        title: "Reconnected to T3 Server",
+        title: "Reconnected to NitroCode Server",
         type: "success" as const,
         timeout: 0,
         data: {

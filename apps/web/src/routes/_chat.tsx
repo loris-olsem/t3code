@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useCommandPaletteStore } from "../commandPaletteStore";
@@ -21,6 +21,9 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useServerKeybindings();
+  const shortcutsEnabled = useLocation({
+    select: (location) => !location.pathname.startsWith("/projects/"),
+  });
   const terminalOpen = useTerminalStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalState(state.terminalStateByThreadKey, routeThreadRef).terminalOpen
@@ -29,6 +32,10 @@ function ChatRouteGlobalShortcuts() {
   const appSettings = useSettings();
 
   useEffect(() => {
+    if (!shortcutsEnabled) {
+      return;
+    }
+
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
@@ -90,6 +97,7 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     selectedThreadKeysSize,
+    shortcutsEnabled,
     terminalOpen,
     appSettings.defaultThreadEnvMode,
   ]);

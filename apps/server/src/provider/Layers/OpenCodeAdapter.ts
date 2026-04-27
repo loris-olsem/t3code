@@ -10,10 +10,10 @@ import {
   type ToolLifecycleItemType,
   TurnId,
   type UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream } from "effect";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@nitrocode/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -1028,7 +1028,7 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
                 });
                 const openCodeSession = yield* runOpenCodeSdk("session.create", () =>
                   client.session.create({
-                    title: `T3 Code ${input.threadId}`,
+                    title: `NitroCode ${input.threadId}`,
                     permission: buildOpenCodePermissionRules(input.runtimeMode),
                   }),
                 );

@@ -5,9 +5,9 @@ import {
   TextGenerationError,
   type ChatAttachment,
   type OpenCodeModelSelection,
-} from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@nitrocode/shared/git";
+import { getModelSelectionStringOptionValue } from "@nitrocode/shared/model";
 
 import { ServerConfig } from "../../config.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -315,7 +315,7 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
               : {}),
           });
           const session = await client.session.create({
-            title: `T3 Code ${input.operation}`,
+            title: `NitroCode ${input.operation}`,
             permission: [{ permission: "*", pattern: "*", action: "deny" }],
           });
           if (!session.data) {

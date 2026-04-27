@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "@nitrocode/contracts";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { assert, it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Schema } from "effect";
 import { ServerConfig } from "./config.ts";
@@ -11,7 +11,7 @@ const makeServerSettingsLayer = () =>
     Layer.provideMerge(
       Layer.fresh(
         ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3code-server-settings-test-",
+          prefix: "nitrocode-server-settings-test-",
         }),
       ),
     ),

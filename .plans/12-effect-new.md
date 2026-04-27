@@ -1,17 +1,19 @@
-# Effect Migration Plan (From Current State)
+# Effect Migration Plan (Historical)
+
+This is a historical implementation plan. Revalidate any remaining tasks against the current code before using it as active work.
 
 Current status summary:
 
 - Service contracts, typed errors, and most checkpoint/persistence services exist.
 - `ProviderServiceLive` is already native orchestration (not a thin adapter).
-- Production server path still uses legacy `ProviderManager`/`FilesystemCheckpointStore`.
+- The active server source no longer contains the superseded pre-Effect provider/checkpoint classes.
 - Checkpoint flow now avoids snapshot re-sync and is write-time driven.
 
 ## PR 1: Wire Provider/Checkpoint Effect Stack Into `wsServer`
 
 - Build one runtime layer graph for provider + checkpoint + persistence + orchestration.
 - Resolve `ProviderService` from runtime in `wsServer`.
-- Replace `ProviderManager` method calls in WS handlers with `ProviderService` calls.
+- Replace old manager method calls in WS handlers with `ProviderService` calls.
 - Forward provider events by subscribing to `ProviderService.subscribeToEvents`.
 - Keep WS method/push payloads identical.
 
@@ -56,9 +58,8 @@ Current status summary:
 
 ## PR 7: Remove Legacy Provider Stack
 
-- Remove `ProviderManager` + legacy checkpoint integration from runtime path.
-- Remove `FilesystemCheckpointStore` from active server flow (keep only if explicitly needed for compatibility tooling).
-- Update tests to assert only Effect service path is used.
+- Historical cleanup item; the active source no longer contains the superseded pre-Effect provider/checkpoint classes.
+- If similar compatibility code is reintroduced, keep it outside the runtime path and cover the Effect service path with tests.
 
 ## PR 8: Final Cleanup + Docs
 

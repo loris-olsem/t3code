@@ -7,16 +7,16 @@ import type {
   ServerProviderAuth,
   ServerProviderSlashCommand,
   ServerProviderState,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { Cache, Duration, Effect, Equal, Layer, Option, Result, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import { decodeJsonResult } from "@nitrocode/shared/schemaJson";
 import {
   createModelCapabilities,
   getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+} from "@nitrocode/shared/model";
 import {
   query as claudeQuery,
   type SlashCommand as ClaudeSlashCommand,
@@ -41,7 +41,7 @@ import { compareCliVersions } from "../cliVersion.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { ClaudeProvider } from "../Services/ClaudeProvider.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { ServerSettingsError } from "@t3tools/contracts";
+import { ServerSettingsError } from "@nitrocode/contracts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -664,7 +664,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in T3 Code settings.",
+        message: "Claude is disabled in NitroCode settings.",
       },
     });
   }
@@ -866,7 +866,7 @@ const makePendingClaudeProvider = (claudeSettings: ClaudeSettings): ServerProvid
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in T3 Code settings.",
+        message: "Claude is disabled in NitroCode settings.",
       },
     });
   }

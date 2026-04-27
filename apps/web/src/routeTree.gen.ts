@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
+import { Route as NitromapRouteImport } from './routes/_nitromap'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
@@ -18,6 +19,10 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings.conne
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as NitromapProjectsEnvironmentIdProjectIdWorkRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.work'
+import { Route as NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.map-maintenance'
+import { Route as NitromapProjectsEnvironmentIdProjectIdMapRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.map'
+import { Route as NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport } from './routes/_nitromap.projects.$environmentId.$projectId.work.$episodeId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -27,6 +32,10 @@ const SettingsRoute = SettingsRouteImport.update({
 const PairRoute = PairRouteImport.update({
   id: '/pair',
   path: '/pair',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NitromapRoute = NitromapRouteImport.update({
+  id: '/_nitromap',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -64,6 +73,30 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
+const NitromapProjectsEnvironmentIdProjectIdWorkRoute =
+  NitromapProjectsEnvironmentIdProjectIdWorkRouteImport.update({
+    id: '/projects/$environmentId/$projectId/work',
+    path: '/projects/$environmentId/$projectId/work',
+    getParentRoute: () => NitromapRoute,
+  } as any)
+const NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute =
+  NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRouteImport.update({
+    id: '/projects/$environmentId/$projectId/map-maintenance',
+    path: '/projects/$environmentId/$projectId/map-maintenance',
+    getParentRoute: () => NitromapRoute,
+  } as any)
+const NitromapProjectsEnvironmentIdProjectIdMapRoute =
+  NitromapProjectsEnvironmentIdProjectIdMapRouteImport.update({
+    id: '/projects/$environmentId/$projectId/map',
+    path: '/projects/$environmentId/$projectId/map',
+    getParentRoute: () => NitromapRoute,
+  } as any)
+const NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute =
+  NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport.update({
+    id: '/$episodeId',
+    path: '/$episodeId',
+    getParentRoute: () => NitromapProjectsEnvironmentIdProjectIdWorkRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
@@ -74,20 +107,29 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof SettingsGeneralRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
+  '/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
+  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof ChatIndexRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
+  '/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
+  '/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
+  '/_nitromap': typeof NitromapRouteWithChildren
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
@@ -96,6 +138,10 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/_nitromap/projects/$environmentId/$projectId/map': typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
+  '/_nitromap/projects/$environmentId/$projectId/map-maintenance': typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
+  '/_nitromap/projects/$environmentId/$projectId/work': typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+  '/_nitromap/projects/$environmentId/$projectId/work/$episodeId': typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,19 +154,28 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/projects/$environmentId/$projectId/map'
+    | '/projects/$environmentId/$projectId/map-maintenance'
+    | '/projects/$environmentId/$projectId/work'
+    | '/projects/$environmentId/$projectId/work/$episodeId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/pair'
     | '/settings'
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/general'
-    | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/projects/$environmentId/$projectId/map'
+    | '/projects/$environmentId/$projectId/map-maintenance'
+    | '/projects/$environmentId/$projectId/work'
+    | '/projects/$environmentId/$projectId/work/$episodeId'
   id:
     | '__root__'
     | '/_chat'
+    | '/_nitromap'
     | '/pair'
     | '/settings'
     | '/settings/archived'
@@ -129,10 +184,15 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/_nitromap/projects/$environmentId/$projectId/map'
+    | '/_nitromap/projects/$environmentId/$projectId/map-maintenance'
+    | '/_nitromap/projects/$environmentId/$projectId/work'
+    | '/_nitromap/projects/$environmentId/$projectId/work/$episodeId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  NitromapRoute: typeof NitromapRouteWithChildren
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
 }
@@ -151,6 +211,13 @@ declare module '@tanstack/react-router' {
       path: '/pair'
       fullPath: '/pair'
       preLoaderRoute: typeof PairRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_nitromap': {
+      id: '/_nitromap'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof NitromapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_chat': {
@@ -202,6 +269,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_nitromap/projects/$environmentId/$projectId/work': {
+      id: '/_nitromap/projects/$environmentId/$projectId/work'
+      path: '/projects/$environmentId/$projectId/work'
+      fullPath: '/projects/$environmentId/$projectId/work'
+      preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteImport
+      parentRoute: typeof NitromapRoute
+    }
+    '/_nitromap/projects/$environmentId/$projectId/map-maintenance': {
+      id: '/_nitromap/projects/$environmentId/$projectId/map-maintenance'
+      path: '/projects/$environmentId/$projectId/map-maintenance'
+      fullPath: '/projects/$environmentId/$projectId/map-maintenance'
+      preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRouteImport
+      parentRoute: typeof NitromapRoute
+    }
+    '/_nitromap/projects/$environmentId/$projectId/map': {
+      id: '/_nitromap/projects/$environmentId/$projectId/map'
+      path: '/projects/$environmentId/$projectId/map'
+      fullPath: '/projects/$environmentId/$projectId/map'
+      preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapRouteImport
+      parentRoute: typeof NitromapRoute
+    }
+    '/_nitromap/projects/$environmentId/$projectId/work/$episodeId': {
+      id: '/_nitromap/projects/$environmentId/$projectId/work/$episodeId'
+      path: '/$episodeId'
+      fullPath: '/projects/$environmentId/$projectId/work/$episodeId'
+      preLoaderRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRouteImport
+      parentRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRoute
+    }
   }
 }
 
@@ -218,6 +313,40 @@ const ChatRouteChildren: ChatRouteChildren = {
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
+interface NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren {
+  NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute
+}
+
+const NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren: NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren =
+  {
+    NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute:
+      NitromapProjectsEnvironmentIdProjectIdWorkEpisodeIdRoute,
+  }
+
+const NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren =
+  NitromapProjectsEnvironmentIdProjectIdWorkRoute._addFileChildren(
+    NitromapProjectsEnvironmentIdProjectIdWorkRouteChildren,
+  )
+
+interface NitromapRouteChildren {
+  NitromapProjectsEnvironmentIdProjectIdMapRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapRoute
+  NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute: typeof NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute
+  NitromapProjectsEnvironmentIdProjectIdWorkRoute: typeof NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren
+}
+
+const NitromapRouteChildren: NitromapRouteChildren = {
+  NitromapProjectsEnvironmentIdProjectIdMapRoute:
+    NitromapProjectsEnvironmentIdProjectIdMapRoute,
+  NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute:
+    NitromapProjectsEnvironmentIdProjectIdMapMaintenanceRoute,
+  NitromapProjectsEnvironmentIdProjectIdWorkRoute:
+    NitromapProjectsEnvironmentIdProjectIdWorkRouteWithChildren,
+}
+
+const NitromapRouteWithChildren = NitromapRoute._addFileChildren(
+  NitromapRouteChildren,
+)
 
 interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
@@ -237,6 +366,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  NitromapRoute: NitromapRouteWithChildren,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
 }

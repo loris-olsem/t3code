@@ -7,13 +7,17 @@ import {
   ServerSettings,
   type ServerProvider,
   type ServerSettings as ContractServerSettings,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { deepMerge } from "@t3tools/shared/Struct";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { deepMerge } from "@nitrocode/shared/Struct";
+import { createModelCapabilities } from "@nitrocode/shared/model";
 
-import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
+import {
+  appendKnownCodexModels,
+  checkCodexProviderStatus,
+  type CodexAppServerProviderSnapshot,
+} from "./CodexProvider.ts";
 import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider.ts";
 import {
   haveProvidersChanged,
@@ -24,7 +28,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
 import { ProviderRegistry } from "../Services/ProviderRegistry.ts";
 
-process.env.T3CODE_CURSOR_ENABLED = "1";
+process.env.NITROCODE_CURSOR_ENABLED = "1";
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -286,6 +290,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
         }),
       );
 
+      it("adds GPT-5.5 when the app-server model list omits it", () => {
+        const models = appendKnownCodexModels([
+          {
+            slug: "gpt-5.4",
+            name: "GPT-5.4",
+            isCustom: false,
+            capabilities: null,
+          },
+        ]);
+
+        const gpt55 = models.find((model) => model.slug === "gpt-5.5");
+        assert.strictEqual(gpt55?.name, "GPT-5.5");
+        assert.strictEqual(gpt55?.isCustom, false);
+        assert.deepStrictEqual(
+          gpt55?.capabilities?.optionDescriptors?.[0],
+          selectDescriptor("reasoningEffort", "Reasoning", [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium", isDefault: true },
+            { id: "high", label: "High" },
+            { id: "xhigh", label: "Extra High" },
+          ]),
+        );
+      });
+
       it.effect("returns unavailable when codex is missing", () =>
         Effect.gen(function* () {
           const status = yield* checkCodexProviderStatus(() =>
@@ -446,7 +474,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-provider-registry-",
+                prefix: "nitrocode-provider-registry-",
               }),
             ),
             Layer.provideMerge(
@@ -516,7 +544,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
               Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
               Layer.provideMerge(
                 ServerConfig.layerTest(process.cwd(), {
-                  prefix: "t3-provider-registry-",
+                  prefix: "nitrocode-provider-registry-",
                 }),
               ),
               Layer.provideMerge(
@@ -555,7 +583,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
               assert.strictEqual(cursorProvider?.status, "disabled");
               assert.strictEqual(
                 cursorProvider?.message,
-                "Cursor is disabled in T3 Code settings.",
+                "Cursor is disabled in NitroCode settings.",
               );
               assert.strictEqual(cursorSpawned, false);
             }).pipe(Effect.provide(runtimeServices));
@@ -581,7 +609,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           assert.strictEqual(status.enabled, false);
           assert.strictEqual(status.status, "disabled");
           assert.strictEqual(status.installed, false);
-          assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+          assert.strictEqual(status.message, "Codex is disabled in NitroCode settings.");
         }),
       );
     });

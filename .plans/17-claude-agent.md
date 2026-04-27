@@ -2,7 +2,7 @@
 
 ## Why this plan was rewritten
 
-The previous plan targeted a pre-orchestration architecture (`ProviderManager`, provider-native WS event methods, and direct provider UI wiring). The current app now routes everything through:
+The previous plan targeted a pre-orchestration architecture with provider-native WS event methods and direct provider UI wiring. The current app now routes everything through:
 
 1. `orchestration.dispatchCommand` (client intent)
 2. `OrchestrationEngine` (decide + persist + publish domain events)

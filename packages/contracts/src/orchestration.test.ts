@@ -248,7 +248,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
         prepareWorktree: {
           projectCwd: "/tmp/workspace",
           baseBranch: "main",
-          branch: "t3code/example",
+          branch: "nitrocode/example",
         },
         runSetupScript: true,
       },
@@ -311,6 +311,25 @@ it.effect("decodes thread archive and unarchive commands", () =>
 
     assert.strictEqual(archive.type, "thread.archive");
     assert.strictEqual(unarchive.type, "thread.unarchive");
+  }),
+);
+
+it.effect("decodes Nitro round completion commands", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeOrchestrationCommand({
+      type: "thread.nitro-round.complete",
+      commandId: "cmd-nitro-round-complete",
+      threadId: "thread-1",
+      messageId: "system-message-1",
+      episodeId: "episode-1",
+      roundIndex: 1,
+      status: "completed",
+      workDetailRoute: "/projects/environment-1/project-1/work/episode-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(command.type, "thread.nitro-round.complete");
+    assert.strictEqual(command.messageId, "system-message-1");
   }),
 );
 

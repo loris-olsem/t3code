@@ -3,8 +3,8 @@ import {
   PROVIDER_DISPLAY_NAMES,
   type ResolvedKeybindingsConfig,
   type ServerProvider,
-} from "@t3tools/contracts";
-import { resolveSelectableModel } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { resolveSelectableModel } from "@nitrocode/shared/model";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";

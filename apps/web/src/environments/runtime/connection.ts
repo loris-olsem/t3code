@@ -5,8 +5,8 @@ import type {
   ServerConfig,
   ServerLifecycleWelcomePayload,
   TerminalEvent,
-} from "@t3tools/contracts";
-import type { KnownEnvironment } from "@t3tools/client-runtime";
+} from "@nitrocode/contracts";
+import type { KnownEnvironment } from "@nitrocode/client-runtime";
 
 import type { WsRpcClient } from "~/rpc/wsRpcClient";
 
@@ -30,6 +30,7 @@ interface OrchestrationHandlers {
     environmentId: EnvironmentId,
   ) => void;
   readonly applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => void;
+  readonly handleShellResubscribe?: (environmentId: EnvironmentId) => void;
 }
 
 interface EnvironmentConnectionInput extends OrchestrationHandlers {
@@ -130,6 +131,7 @@ export function createEnvironmentConnection(
           return;
         }
         bootstrapGate.reset();
+        input.handleShellResubscribe?.(environmentId);
       },
     },
   );

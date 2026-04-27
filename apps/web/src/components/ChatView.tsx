@@ -18,20 +18,20 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   TerminalOpenInput,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime";
+} from "@nitrocode/client-runtime";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { truncate } from "@t3tools/shared/String";
+} from "@nitrocode/shared/model";
+import { projectScriptCwd, projectScriptRuntimeEnv } from "@nitrocode/shared/projectScripts";
+import { truncate } from "@nitrocode/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -95,7 +95,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useCommandPaletteStore } from "../commandPaletteStore";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { buildTemporaryWorktreeBranchName } from "@nitrocode/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { BranchToolbar } from "./BranchToolbar";
@@ -153,6 +153,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveNitroSubmitState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -178,6 +179,11 @@ import {
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
+import {
+  getRunningNitroEpisodeForConversation,
+  useNitroWorkEpisodeStore,
+} from "../nitromap/workEpisodeStore";
+import { useNitroMapAvailability } from "../nitromap/useNitroMapAvailability";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -839,6 +845,31 @@ export default function ChatView(props: ChatViewProps) {
   const activeProject = useStore(
     useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
   );
+  const runningNitroEpisode = useNitroWorkEpisodeStore(
+    useMemo(
+      () => (state) =>
+        activeThread && activeProject
+          ? getRunningNitroEpisodeForConversation(state, {
+              environmentId: activeThread.environmentId,
+              projectId: activeProject.id,
+              conversationThreadId: activeThread.id,
+            })
+          : null,
+      [activeProject, activeThread],
+    ),
+  );
+  const startNitroEpisode = useNitroWorkEpisodeStore((state) => state.startEpisode);
+  const discardNitroEpisode = useNitroWorkEpisodeStore((state) => state.discardEpisode);
+  const nitroMapAvailability = useNitroMapAvailability({
+    environmentId: activeThread?.environmentId ?? environmentId,
+    projectId: activeProject?.id ?? null,
+    enabled: activeProject !== undefined,
+  });
+  const nitroSubmitState = deriveNitroSubmitState({
+    hasProjectMap: nitroMapAvailability.available,
+    projectMapDisabledReason: nitroMapAvailability.disabledReason,
+    hasRunningEpisode: runningNitroEpisode !== null,
+  });
 
   useEffect(() => {
     if (routeKind !== "server") {
@@ -2377,12 +2408,21 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (e?: { preventDefault: () => void }, options?: { nitro: boolean }) => {
     e?.preventDefault();
+    const isNitroSend = options?.nitro === true;
     const api = readEnvironmentApi(environmentId);
     if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
+      return;
+    }
+    if (runningNitroEpisode) {
+      setThreadError(activeThread.id, "Abort or finish the running Nitro episode before sending.");
+      return;
+    }
+    if (isNitroSend && nitroSubmitState.nitroDisabledReason) {
+      setThreadError(activeThread.id, nitroSubmitState.nitroDisabledReason);
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
@@ -2539,6 +2579,7 @@ export default function ChatView(props: ChatViewProps) {
     composerRef.current?.resetCursorState();
 
     let turnStartSucceeded = false;
+    let startedNitroEpisodeId: string | null = null;
     await (async () => {
       let firstComposerImageName: string | null = null;
       if (composerImagesSnapshot.length > 0) {
@@ -2558,6 +2599,23 @@ export default function ChatView(props: ChatViewProps) {
         }
       }
       const title = truncate(titleSeed);
+      if (isNitroSend) {
+        const episodeId = `nitro-episode-${randomUUID()}`;
+        const roundId = `nitro-round-${randomUUID()}`;
+        startNitroEpisode({
+          episodeId,
+          roundId,
+          environmentId: activeThread.environmentId,
+          projectId: activeProject.id,
+          conversationThreadId: threadIdForSend,
+          startedFromMessageId: messageIdForSend,
+          title,
+          prompt: trimmed || title,
+          transcriptRoute: `/${encodeURIComponent(activeThread.environmentId)}/${encodeURIComponent(threadIdForSend)}`,
+          createdAt: messageCreatedAt,
+        });
+        startedNitroEpisodeId = episodeId;
+      }
       const threadCreateModelSelection = createModelSelection(
         ctxSelectedProvider,
         ctxSelectedModel ||
@@ -2667,6 +2725,13 @@ export default function ChatView(props: ChatViewProps) {
         threadIdForSend,
         err instanceof Error ? err.message : "Failed to send message.",
       );
+      if (startedNitroEpisodeId) {
+        discardNitroEpisode({
+          environmentId: activeThread.environmentId,
+          projectId: activeProject.id,
+          episodeId: startedNitroEpisodeId,
+        });
+      }
     });
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
@@ -3380,6 +3445,10 @@ export default function ChatView(props: ChatViewProps) {
               shouldAutoScrollRef={isAtEndRef}
               scheduleStickToBottom={scrollToEnd}
               onSend={onSend}
+              onNitroSend={() => void onSend(undefined, { nitro: true })}
+              regularSubmitDisabled={nitroSubmitState.regularSubmitDisabled}
+              nitroDisabled={nitroSubmitState.nitroDisabledReason !== null}
+              nitroDisabledReason={nitroSubmitState.nitroDisabledReason}
               onInterrupt={onInterrupt}
               onImplementPlanInNewThread={onImplementPlanInNewThread}
               onRespondToApproval={onRespondToApproval}

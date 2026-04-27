@@ -8,7 +8,7 @@ import { SecretStoreError, ServerSecretStore } from "../Services/ServerSecretSto
 import { ServerSecretStoreLive } from "./ServerSecretStore.ts";
 
 const makeServerConfigLayer = () =>
-  ServerConfig.layerTest(process.cwd(), { prefix: "t3-secret-store-test-" });
+  ServerConfig.layerTest(process.cwd(), { prefix: "nitrocode-secret-store-test-" });
 
 const makeServerSecretStoreLayer = () =>
   Layer.provide(ServerSecretStoreLive, makeServerConfigLayer());
@@ -213,9 +213,11 @@ it.layer(NodeServices.layer)("ServerSecretStoreLive", (it) => {
 
       yield* secretStore.set("session-signing-key", Uint8Array.from([1, 2, 3]));
 
-      expect(chmodCalls.some((call) => call.mode === 0o700 && call.path.endsWith("/secrets"))).toBe(
-        true,
-      );
+      expect(
+        chmodCalls.some(
+          (call) => call.mode === 0o700 && call.path.replaceAll("\\", "/").endsWith("/secrets"),
+        ),
+      ).toBe(true);
       expect(chmodCalls.filter((call) => call.mode === 0o600).length).toBeGreaterThanOrEqual(2);
     }).pipe(Effect.provide(NodeServices.layer)),
   );

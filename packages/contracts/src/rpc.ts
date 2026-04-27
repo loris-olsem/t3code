@@ -49,6 +49,14 @@ import {
   OrchestrationRpcSchemas,
 } from "./orchestration.ts";
 import {
+  NITROMAP_WS_METHODS,
+  NitroMapGetProjectSnapshotInput,
+  NitroMapProjectSnapshot,
+  NitroMapProjectionError,
+  NitroMapSubscribeProjectInput,
+  NitroMapSubscriptionEvent,
+} from "./nitromap.ts";
+import {
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
@@ -330,6 +338,19 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsNitroMapGetProjectSnapshotRpc = Rpc.make(NITROMAP_WS_METHODS.getProjectSnapshot, {
+  payload: NitroMapGetProjectSnapshotInput,
+  success: NitroMapProjectSnapshot,
+  error: NitroMapProjectionError,
+});
+
+export const WsNitroMapSubscribeProjectRpc = Rpc.make(NITROMAP_WS_METHODS.subscribeProject, {
+  payload: NitroMapSubscribeProjectInput,
+  success: NitroMapSubscriptionEvent,
+  error: NitroMapProjectionError,
+  stream: true,
+});
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -393,4 +414,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationReplayEventsRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsNitroMapGetProjectSnapshotRpc,
+  WsNitroMapSubscribeProjectRpc,
 );

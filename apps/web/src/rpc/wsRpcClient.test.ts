@@ -2,7 +2,10 @@ import type {
   GitStatusLocalResult,
   GitStatusRemoteResult,
   GitStatusStreamEvent,
-} from "@t3tools/contracts";
+  NitroMapSubscriptionEvent,
+} from "@nitrocode/contracts";
+import { NITROMAP_WS_METHODS } from "@nitrocode/contracts";
+import { Stream } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./wsTransport", () => ({
@@ -100,5 +103,78 @@ describe("wsRpcClient", () => {
         },
       ],
     ]);
+  });
+
+  it("resubscribes NitroMap streams with the latest cursor", () => {
+    const subscribeInputs: unknown[] = [];
+    const events = [
+      {
+        type: "nitromap.snapshot",
+        environmentId: "environment-1",
+        projectId: "project-1",
+        sequence: 1,
+        projectVersion: 1,
+        emittedAt: "2026-04-26T00:00:00.000Z",
+        snapshot: {},
+      },
+      {
+        type: "nitromap.stale",
+        environmentId: "environment-1",
+        projectId: "project-1",
+        sequence: 1,
+        projectVersion: 1,
+        emittedAt: "2026-04-26T00:00:00.000Z",
+        reason: "No newer events.",
+      },
+    ] as NitroMapSubscriptionEvent[];
+    const subscribe = vi.fn((connect: (client: any) => unknown, listener: (value: any) => void) => {
+      const client = {
+        [NITROMAP_WS_METHODS.subscribeProject]: (input: unknown) => {
+          subscribeInputs.push(input);
+          return Stream.empty;
+        },
+      };
+
+      connect(client);
+      listener(events[0]);
+      connect(client);
+      listener(events[1]);
+      return () => undefined;
+    });
+    const transport = {
+      dispose: vi.fn(async () => undefined),
+      reconnect: vi.fn(async () => undefined),
+      request: vi.fn(),
+      requestStream: vi.fn(),
+      subscribe,
+    } satisfies Pick<
+      WsTransport,
+      "dispose" | "reconnect" | "request" | "requestStream" | "subscribe"
+    >;
+
+    const client = createWsRpcClient(transport as unknown as WsTransport);
+    const listener = vi.fn();
+
+    client.nitromap.subscribeProject(
+      {
+        environmentId: "environment-1" as never,
+        projectId: "project-1" as never,
+      },
+      listener,
+    );
+
+    expect(subscribeInputs).toEqual([
+      {
+        environmentId: "environment-1",
+        projectId: "project-1",
+      },
+      {
+        environmentId: "environment-1",
+        projectId: "project-1",
+        lastSequence: 1,
+        lastProjectVersion: 1,
+      },
+    ]);
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 });

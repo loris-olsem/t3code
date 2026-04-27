@@ -11,7 +11,7 @@ import type {
   ServerProviderModel,
   ServerProviderState,
   ServerSettingsError,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { Cause, Effect, Equal, Exit, Layer, Option, Result, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -19,7 +19,7 @@ import {
   createModelCapabilities,
   getProviderOptionBooleanSelectionValue,
   getProviderOptionStringSelectionValue,
-} from "@t3tools/shared/model";
+} from "@nitrocode/shared/model";
 
 import {
   buildBooleanOptionDescriptor,
@@ -72,7 +72,7 @@ function buildInitialCursorProviderSnapshot(cursorSettings: CursorSettings): Ser
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Cursor is disabled in T3 Code settings.",
+        message: "Cursor is disabled in NitroCode settings.",
       },
     });
   }
@@ -406,7 +406,7 @@ const makeCursorAcpProbeRuntime = (cursorSettings: CursorSettings) =>
           cwd: process.cwd(),
         },
         cwd: process.cwd(),
-        clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+        clientInfo: { name: "nitro-code-provider-probe", version: "0.0.0" },
         authMethodId: "cursor_login",
         clientCapabilities: CURSOR_PARAMETERIZED_MODEL_PICKER_CAPABILITIES,
       }).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner))),
@@ -1049,7 +1049,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Cursor is disabled in T3 Code settings.",
+          message: "Cursor is disabled in NitroCode settings.",
         },
       });
     }

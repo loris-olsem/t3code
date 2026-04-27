@@ -1,5 +1,5 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
+import { type ServerLifecycleWelcomePayload } from "@nitrocode/contracts";
+import { scopedProjectKey, scopeProjectRef } from "@nitrocode/client-runtime";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -13,6 +13,8 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { NitroMapAppLayout } from "../components/NitroMapAppLayout";
+import { NitroEpisodeCompletionCoordinator } from "../nitromap/NitroEpisodeCompletionCoordinator";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -94,20 +96,22 @@ function RootRouteView() {
   if (authGateState.status !== "authenticated") {
     return <Outlet />;
   }
+  const Shell = pathname.startsWith("/projects/") ? NitroMapAppLayout : AppSidebarLayout;
   return (
     <ToastProvider>
       <AnchoredToastProvider>
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap />
         <EnvironmentConnectionManagerBootstrap />
+        <NitroEpisodeCompletionCoordinator />
         <EventRouter />
         <WebSocketConnectionCoordinator />
         <SlowRpcAckToastCoordinator />
         <WebSocketConnectionSurface>
           <CommandPalette>
-            <AppSidebarLayout>
+            <Shell>
               <Outlet />
-            </AppSidebarLayout>
+            </Shell>
           </CommandPalette>
         </WebSocketConnectionSurface>
       </AnchoredToastProvider>

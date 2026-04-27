@@ -1,5 +1,10 @@
-import { Effect, Exit, PubSub, Scope, Stream } from "effect";
-import { ORCHESTRATION_WS_METHODS, WS_METHODS, WsRpcGroup } from "@t3tools/contracts";
+import { Data, Effect, Exit, PubSub, Scope, Stream } from "effect";
+import {
+  NITROMAP_WS_METHODS,
+  ORCHESTRATION_WS_METHODS,
+  WS_METHODS,
+  WsRpcGroup,
+} from "@nitrocode/contracts";
 import { RpcMessage, RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 type RpcServerInstance = RpcServer.RpcServer<any>;
@@ -14,12 +19,16 @@ export type NormalizedWsRpcRequestBody = {
 };
 
 type UnaryResolverResult = unknown | Promise<unknown>;
+type StreamResolverResult = ReadonlyArray<unknown> | undefined;
+
+class BrowserWsRpcStreamError extends Data.TaggedError("BrowserWsRpcStreamError")<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
 
 interface BrowserWsRpcHarnessOptions {
   readonly resolveUnary?: (request: NormalizedWsRpcRequestBody) => UnaryResolverResult;
-  readonly getInitialStreamValues?: (
-    request: NormalizedWsRpcRequestBody,
-  ) => ReadonlyArray<unknown> | undefined;
+  readonly getInitialStreamValues?: (request: NormalizedWsRpcRequestBody) => StreamResolverResult;
 }
 
 const STREAM_METHODS = new Set<string>([
@@ -30,6 +39,7 @@ const STREAM_METHODS = new Set<string>([
   WS_METHODS.subscribeTerminalEvents,
   WS_METHODS.subscribeServerConfig,
   WS_METHODS.subscribeServerLifecycle,
+  NITROMAP_WS_METHODS.subscribeProject,
 ]);
 
 const ALL_RPC_METHODS = Array.from(WsRpcGroup.requests.keys());
@@ -171,7 +181,16 @@ export class BrowserWsRpcHarness {
     if (!pubsub) {
       throw new Error(`No stream registered for ${method}`);
     }
-    return Stream.fromIterable(this.getInitialStreamValues(request) ?? []).pipe(
+    const initialValues = Effect.try({
+      try: () => this.getInitialStreamValues(request) ?? [],
+      catch: (cause) =>
+        new BrowserWsRpcStreamError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
+    return Stream.fromEffect(initialValues).pipe(
+      Stream.flatMap((values) => Stream.fromIterable(values)),
       Stream.concat(Stream.fromPubSub(pubsub)),
     );
   }

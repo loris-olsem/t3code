@@ -7,7 +7,7 @@ import {
   type ServerConfig,
   type TerminalEvent,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { type QueryClient } from "@tanstack/react-query";
 import { Throttler } from "@tanstack/react-pacer";
 import {
@@ -16,7 +16,7 @@ import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime";
+} from "@nitrocode/client-runtime";
 
 import {
   markPromotedDraftThreadByRef,
@@ -85,7 +85,7 @@ type ThreadDetailSubscriptionEntry = {
 };
 
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
-const environmentConnectionListeners = new Set<() => void>();
+const environmentConnectionListeners = new Set<(environmentId?: EnvironmentId) => void>();
 const threadDetailSubscriptions = new Map<string, ThreadDetailSubscriptionEntry>();
 const lastAppliedProjectionVersionByEnvironment = new Map<
   EnvironmentId,
@@ -474,10 +474,14 @@ export function retainThreadDetailSubscription(
   };
 }
 
-function emitEnvironmentConnectionRegistryChange() {
+function emitEnvironmentConnectionRegistryChange(environmentId?: EnvironmentId) {
   for (const listener of environmentConnectionListeners) {
-    listener();
+    listener(environmentId);
   }
+}
+
+export function notifyEnvironmentConnectionRecovered(environmentId: EnvironmentId): void {
+  emitEnvironmentConnectionRegistryChange(environmentId);
 }
 
 function getRuntimeErrorFields(error: unknown) {
@@ -785,6 +789,9 @@ function createEnvironmentConnectionHandlers() {
       }
       useTerminalStateStore.getState().applyTerminalEvent(threadRef, event);
     },
+    handleShellResubscribe: (environmentId: EnvironmentId) => {
+      notifyEnvironmentConnectionRecovered(environmentId);
+    },
   };
 }
 
@@ -866,7 +873,7 @@ function registerConnection(connection: EnvironmentConnection): EnvironmentConne
     throw new Error(`Environment ${connection.environmentId} already has an active connection.`);
   }
   environmentConnections.set(connection.environmentId, connection);
-  emitEnvironmentConnectionRegistryChange();
+  emitEnvironmentConnectionRegistryChange(connection.environmentId);
   return connection;
 }
 
@@ -879,7 +886,7 @@ async function removeConnection(environmentId: EnvironmentId): Promise<boolean> 
   disposeThreadDetailSubscriptionsForEnvironment(environmentId);
   lastAppliedProjectionVersionByEnvironment.delete(environmentId);
   environmentConnections.delete(environmentId);
-  emitEnvironmentConnectionRegistryChange();
+  emitEnvironmentConnectionRegistryChange(environmentId);
   await connection.dispose();
   return true;
 }
@@ -1006,7 +1013,9 @@ function stopActiveService() {
   activeService = null;
 }
 
-export function subscribeEnvironmentConnections(listener: () => void): () => void {
+export function subscribeEnvironmentConnections(
+  listener: (environmentId?: EnvironmentId) => void,
+): () => void {
   environmentConnectionListeners.add(listener);
   return () => {
     environmentConnectionListeners.delete(listener);
@@ -1033,6 +1042,11 @@ export function requireEnvironmentConnection(environmentId: EnvironmentId): Envi
 
 export function getPrimaryEnvironmentConnection(): EnvironmentConnection {
   return createPrimaryEnvironmentConnection();
+}
+
+export async function reconnectPrimaryEnvironment(): Promise<void> {
+  const connection = getPrimaryEnvironmentConnection();
+  await connection.reconnect();
 }
 
 export async function disconnectSavedEnvironment(environmentId: EnvironmentId): Promise<void> {

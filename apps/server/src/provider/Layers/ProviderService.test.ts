@@ -8,7 +8,7 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import {
   ApprovalRequestId,
   EventId,
@@ -16,8 +16,8 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { createModelSelection } from "@nitrocode/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
 import { Effect, Fiber, Layer, Metric, Option, PubSub, Ref, Stream } from "effect";
@@ -332,7 +332,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
     );
 
     assert.instanceOf(failure, ProviderValidationError);
-    assert.include(failure.issue, "Provider 'claudeAgent' is disabled in T3 Code settings.");
+    assert.include(failure.issue, "Provider 'claudeAgent' is disabled in NitroCode settings.");
     assert.equal(claude.startSession.mock.calls.length, 0);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -396,7 +396,7 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
 
 it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", () =>
   Effect.gen(function* () {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-"));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nitrocode-provider-service-"));
     const dbPath = path.join(tempDir, "orchestration.sqlite");
 
     const codex = makeFakeCodexAdapter();
@@ -463,7 +463,7 @@ it.effect(
   "ProviderServiceLive restores rollback routing after restart using persisted thread mapping",
   () =>
     Effect.gen(function* () {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-restart-"));
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nitrocode-provider-service-restart-"));
       const dbPath = path.join(tempDir, "orchestration.sqlite");
       const persistenceLayer = makeSqlitePersistenceLive(dbPath);
       const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
@@ -970,7 +970,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("reuses persisted resume cursor when startSession is called after a restart", () =>
     Effect.gen(function* () {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-start-"));
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nitrocode-provider-service-start-"));
       const dbPath = path.join(tempDir, "orchestration.sqlite");
       const persistenceLayer = makeSqlitePersistenceLive(dbPath);
       const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
@@ -1064,7 +1064,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
     "reuses persisted cwd when startSession resumes a claude session without cwd input",
     () =>
       Effect.gen(function* () {
-        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-cwd-"));
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nitrocode-provider-service-cwd-"));
         const dbPath = path.join(tempDir, "orchestration.sqlite");
         const persistenceLayer = makeSqlitePersistenceLive(dbPath);
         const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
@@ -1348,7 +1348,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
       const snapshots = yield* Metric.snapshot;
 
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "nitrocode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "interrupt",
           outcome: "success",
@@ -1356,7 +1356,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "nitrocode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "approval-response",
           outcome: "success",
@@ -1364,7 +1364,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "nitrocode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "user-input-response",
           outcome: "success",
@@ -1372,7 +1372,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "nitrocode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "rollback",
           outcome: "success",
@@ -1380,7 +1380,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_sessions_total", {
+        hasMetricSnapshot(snapshots, "nitrocode_provider_sessions_total", {
           provider: "claudeAgent",
           operation: "stop",
           outcome: "success",
@@ -1412,7 +1412,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         const snapshots = yield* Metric.snapshot;
 
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+          hasMetricSnapshot(snapshots, "nitrocode_provider_turns_total", {
             provider: "claudeAgent",
             operation: "send",
             outcome: "success",
@@ -1420,7 +1420,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           true,
         );
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turn_duration", {
+          hasMetricSnapshot(snapshots, "nitrocode_provider_turn_duration", {
             provider: "claudeAgent",
             operation: "send",
           }),

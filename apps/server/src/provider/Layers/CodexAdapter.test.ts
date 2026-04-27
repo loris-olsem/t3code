@@ -13,8 +13,8 @@ import {
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@nitrocode/contracts";
+import { createModelSelection } from "@nitrocode/shared/model";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 
@@ -967,7 +967,7 @@ scopedFailureLayer("CodexAdapterLive scoped startup failure", (it) => {
 
 it.effect("flushes managed native logs when the adapter layer shuts down", () =>
   Effect.gen(function* () {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-codex-adapter-native-log-"));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nitro-codex-adapter-native-log-"));
     const basePath = path.join(tempDir, "provider-native.ndjson");
     const runtimeFactory = makeRuntimeFactory();
     const scope = yield* Scope.make("sequential");

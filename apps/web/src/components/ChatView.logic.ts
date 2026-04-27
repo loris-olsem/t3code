@@ -6,9 +6,10 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import type { NitroWorkEpisodeSummary } from "../nitromap/types";
 import { Schema } from "effect";
 import { selectThreadByRef, useStore } from "../store";
 import {
@@ -18,10 +19,69 @@ import {
 } from "../lib/terminalContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
-export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
+export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "nitrocode:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+
+export function deriveNitroSubmitState(input: {
+  hasProjectMap: boolean;
+  projectMapDisabledReason?: string | null;
+  hasRunningEpisode: boolean;
+}): {
+  regularSubmitDisabled: boolean;
+  nitroDisabledReason: string | null;
+} {
+  if (!input.hasProjectMap) {
+    return {
+      regularSubmitDisabled: input.hasRunningEpisode,
+      nitroDisabledReason:
+        input.projectMapDisabledReason ?? "Run the Cartographer before starting a Nitro episode.",
+    };
+  }
+
+  if (input.hasRunningEpisode) {
+    return {
+      regularSubmitDisabled: true,
+      nitroDisabledReason: "A Nitro episode is already running for this conversation.",
+    };
+  }
+
+  return {
+    regularSubmitDisabled: false,
+    nitroDisabledReason: null,
+  };
+}
+
+export function resolveNitroEpisodeCompletion(input: {
+  episode: NitroWorkEpisodeSummary | null;
+  latestTurn: Thread["latestTurn"] | null;
+}): {
+  status: "completed" | "failed" | "aborted";
+  completedAt: string;
+} | null {
+  const firstRound = input.episode?.rounds[0] ?? null;
+  if (
+    !input.episode ||
+    !firstRound ||
+    firstRound.resultMessageId !== null ||
+    !input.latestTurn ||
+    input.latestTurn.state === "running" ||
+    input.latestTurn.requestedAt !== input.episode.createdAt
+  ) {
+    return null;
+  }
+
+  return {
+    status:
+      input.latestTurn.state === "completed"
+        ? "completed"
+        : input.latestTurn.state === "interrupted"
+          ? "aborted"
+          : "failed",
+    completedAt: input.latestTurn.completedAt ?? new Date().toISOString(),
+  };
+}
 
 export function buildLocalDraftThread(
   threadId: ThreadId,

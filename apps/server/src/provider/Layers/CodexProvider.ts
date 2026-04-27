@@ -22,10 +22,10 @@ import type {
   ModelCapabilities,
   ServerProviderModel,
   ServerProviderSkill,
-} from "@t3tools/contracts";
-import { ServerSettingsError } from "@t3tools/contracts";
+} from "@nitrocode/contracts";
+import { ServerSettingsError } from "@nitrocode/contracts";
 
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { createModelCapabilities } from "@nitrocode/shared/model";
 
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { buildServerProvider } from "../providerSnapshot.ts";
@@ -56,6 +56,30 @@ const REASONING_EFFORT_LABELS: Record<CodexSchema.V2ModelListResponse__Reasoning
   high: "High",
   xhigh: "Extra High",
 };
+
+const KNOWN_CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "gpt-5.5",
+    name: "GPT-5.5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { id: "low", label: REASONING_EFFORT_LABELS.low },
+            { id: "medium", label: REASONING_EFFORT_LABELS.medium, isDefault: true },
+            { id: "high", label: REASONING_EFFORT_LABELS.high },
+            { id: "xhigh", label: REASONING_EFFORT_LABELS.xhigh },
+          ],
+        },
+      ],
+    }),
+  },
+];
 
 function codexAccountAuthLabel(account: CodexSchema.V2GetAccountResponse["account"]) {
   if (!account) return undefined;
@@ -178,6 +202,14 @@ function appendCustomCodexModels(
   return customEntries.length === 0 ? models : [...models, ...customEntries];
 }
 
+export function appendKnownCodexModels(
+  models: ReadonlyArray<ServerProviderModel>,
+): ReadonlyArray<ServerProviderModel> {
+  const seen = new Set(models.map((model) => model.slug));
+  const additions = KNOWN_CODEX_MODELS.filter((model) => !seen.has(model.slug));
+  return additions.length === 0 ? models : [...models, ...additions];
+}
+
 function parseCodexSkillsListResponse(
   response: CodexSchema.V2SkillsListResponse,
   cwd: string,
@@ -235,8 +267,8 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
+      name: "nitrocode_desktop",
+      title: "NitroCode Desktop",
       version: packageJson.version,
     },
     capabilities: {
@@ -265,8 +297,8 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
 
   const initialize = yield* client.request("initialize", {
     clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
+      name: "nitrocode_desktop",
+      title: "NitroCode Desktop",
       version: "0.1.0",
     },
     capabilities: {
@@ -284,7 +316,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     return {
       account: accountResponse,
       version,
-      models: appendCustomCodexModels([], input.customModels ?? []),
+      models: appendCustomCodexModels(appendKnownCodexModels([]), input.customModels ?? []),
       skills: [],
     } satisfies CodexAppServerProviderSnapshot;
   }
@@ -302,7 +334,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   return {
     account: accountResponse,
     version,
-    models: appendCustomCodexModels(models, input.customModels ?? []),
+    models: appendCustomCodexModels(appendKnownCodexModels(models), input.customModels ?? []),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
   } satisfies CodexAppServerProviderSnapshot;
 }, Effect.scoped);
@@ -335,7 +367,7 @@ const makePendingCodexProvider = (codexSettings: CodexSettings): ServerProvider 
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Codex is disabled in T3 Code settings.",
+        message: "Codex is disabled in NitroCode settings.",
       },
     });
   }
@@ -420,7 +452,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Codex is disabled in T3 Code settings.",
+        message: "Codex is disabled in NitroCode settings.",
       },
     });
   }

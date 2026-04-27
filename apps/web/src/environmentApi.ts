@@ -1,9 +1,11 @@
-import type { EnvironmentId, EnvironmentApi } from "@t3tools/contracts";
+import type { EnvironmentId, EnvironmentApi } from "@nitrocode/contracts";
+import { useSyncExternalStore } from "react";
 
 import type { WsRpcClient } from "./rpc/wsRpcClient";
-import { readEnvironmentConnection } from "./environments/runtime";
+import { readEnvironmentConnection, subscribeEnvironmentConnections } from "./environments/runtime";
 
 const environmentApiOverridesForTests = new Map<EnvironmentId, EnvironmentApi>();
+const cachedEnvironmentApis = new WeakMap<WsRpcClient, EnvironmentApi>();
 
 export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
@@ -45,6 +47,11 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeThread: (input, callback, options) =>
         rpcClient.orchestration.subscribeThread(input, callback, options),
     },
+    nitromap: {
+      getProjectSnapshot: rpcClient.nitromap.getProjectSnapshot,
+      subscribeProject: (input, callback, options) =>
+        rpcClient.nitromap.subscribeProject(input, callback, options),
+    },
   };
 }
 
@@ -63,7 +70,18 @@ export function readEnvironmentApi(environmentId: EnvironmentId): EnvironmentApi
   }
 
   const connection = readEnvironmentConnection(environmentId);
-  return connection ? createEnvironmentApi(connection.client) : undefined;
+  if (!connection) {
+    return undefined;
+  }
+
+  const cachedApi = cachedEnvironmentApis.get(connection.client);
+  if (cachedApi) {
+    return cachedApi;
+  }
+
+  const api = createEnvironmentApi(connection.client);
+  cachedEnvironmentApis.set(connection.client, api);
+  return api;
 }
 
 export function ensureEnvironmentApi(environmentId: EnvironmentId): EnvironmentApi {
@@ -72,6 +90,14 @@ export function ensureEnvironmentApi(environmentId: EnvironmentId): EnvironmentA
     throw new Error(`Environment API not found for environment ${environmentId}`);
   }
   return api;
+}
+
+export function useEnvironmentApi(environmentId: EnvironmentId): EnvironmentApi | undefined {
+  return useSyncExternalStore(
+    subscribeEnvironmentConnections,
+    () => readEnvironmentApi(environmentId),
+    () => undefined,
+  );
 }
 
 export function __setEnvironmentApiOverrideForTests(

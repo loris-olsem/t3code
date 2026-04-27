@@ -37,4 +37,4 @@ export interface ProviderRuntimeIngestionShape {
 export class ProviderRuntimeIngestionService extends Context.Service<
   ProviderRuntimeIngestionService,
   ProviderRuntimeIngestionShape
->()("t3/orchestration/Services/ProviderRuntimeIngestion/ProviderRuntimeIngestionService") {}
+>()("nitrocode/orchestration/Services/ProviderRuntimeIngestion/ProviderRuntimeIngestionService") {}

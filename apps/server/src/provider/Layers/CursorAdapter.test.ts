@@ -2,13 +2,14 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import * as NodeProcess from "node:process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@nitrocode/shared/model";
 
-import { ApprovalRequestId, type ProviderRuntimeEvent, ThreadId } from "@t3tools/contracts";
+import { ApprovalRequestId, type ProviderRuntimeEvent, ThreadId } from "@nitrocode/contracts";
 
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -24,7 +25,24 @@ async function makeMockAgentWrapper(
   options?: { initialDelaySeconds?: number },
 ) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "cursor-acp-mock-"));
-  const wrapperPath = path.join(dir, "fake-agent.sh");
+  const wrapperPath = path.join(
+    dir,
+    NodeProcess.platform === "win32" ? "fake-agent.cmd" : "fake-agent.sh",
+  );
+  if (NodeProcess.platform === "win32") {
+    const envLines = Object.entries(extraEnv ?? {}).map(([key, value]) => `set "${key}=${value}"`);
+    const delayLine = options?.initialDelaySeconds
+      ? `powershell -NoProfile -Command "Start-Sleep -Seconds ${JSON.stringify(String(options.initialDelaySeconds))}"`
+      : "";
+    await writeFile(
+      wrapperPath,
+      ["@echo off", ...envLines, delayLine, `bun ${JSON.stringify(mockAgentPath)} %*`]
+        .filter((line) => line.length > 0)
+        .join("\r\n"),
+      "utf8",
+    );
+    return wrapperPath;
+  }
   const envExports = Object.entries(extraEnv ?? {})
     .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
     .join("\n");
@@ -44,14 +62,32 @@ async function makeProbeWrapper(
   extraEnv?: Record<string, string>,
 ) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "cursor-acp-probe-"));
-  const wrapperPath = path.join(dir, "fake-agent.sh");
+  const wrapperPath = path.join(
+    dir,
+    NodeProcess.platform === "win32" ? "fake-agent.cmd" : "fake-agent.sh",
+  );
+  if (NodeProcess.platform === "win32") {
+    const envLines = Object.entries(extraEnv ?? {}).map(([key, value]) => `set "${key}=${value}"`);
+    await writeFile(
+      wrapperPath,
+      [
+        "@echo off",
+        `>> ${JSON.stringify(argvLogPath)} echo %*`,
+        `set "NITROCODE_ACP_REQUEST_LOG_PATH=${requestLogPath}"`,
+        ...envLines,
+        `bun ${JSON.stringify(mockAgentPath)} %*`,
+      ].join("\r\n"),
+      "utf8",
+    );
+    return wrapperPath;
+  }
   const envExports = Object.entries(extraEnv ?? {})
     .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
     .join("\n");
   const script = `#!/bin/sh
 printf '%s\t' "$@" >> ${JSON.stringify(argvLogPath)}
 printf '\n' >> ${JSON.stringify(argvLogPath)}
-export T3_ACP_REQUEST_LOG_PATH=${JSON.stringify(requestLogPath)}
+export NITROCODE_ACP_REQUEST_LOG_PATH=${JSON.stringify(requestLogPath)}
 ${envExports}
 exec ${JSON.stringify(bunExe)} ${JSON.stringify(mockAgentPath)} "$@"
 `;
@@ -66,7 +102,7 @@ async function readArgvLog(filePath: string) {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => line.split("\t").filter((token) => token.length > 0));
+    .map((line) => line.split(/\s+|\t/).filter((token) => token.length > 0));
 }
 
 async function readJsonLines(filePath: string) {
@@ -91,12 +127,24 @@ async function waitForFileContent(filePath: string, attempts = 40) {
   throw new Error(`Timed out waiting for file content at ${filePath}`);
 }
 
+async function waitForProcessExit(pid: number, attempts = 40) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      NodeProcess.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for process ${pid} to exit`);
+}
+
 const cursorAdapterTestLayer = it.layer(
   makeCursorAdapterLive().pipe(
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3code-cursor-adapter-test-",
+        prefix: "nitrocode-cursor-adapter-test-",
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -195,10 +243,12 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         mkdtemp(path.join(os.tmpdir(), "cursor-adapter-exit-log-")),
       );
       const exitLogPath = path.join(tempDir, "exit.log");
+      const pidLogPath = path.join(tempDir, "pid.log");
 
       const wrapperPath = yield* Effect.promise(() =>
         makeMockAgentWrapper({
-          T3_ACP_EXIT_LOG_PATH: exitLogPath,
+          NITROCODE_ACP_EXIT_LOG_PATH: exitLogPath,
+          NITROCODE_ACP_PID_LOG_PATH: pidLogPath,
         }),
       );
       yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
@@ -211,7 +261,13 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         modelSelection: { provider: "cursor", model: "default" },
       });
 
+      const pid = Number(yield* Effect.promise(() => waitForFileContent(pidLogPath)));
+      assert.isTrue(Number.isInteger(pid));
       yield* adapter.stopSession(threadId);
+      if (NodeProcess.platform === "win32") {
+        yield* Effect.promise(() => waitForProcessExit(pid));
+        return;
+      }
 
       const exitLog = yield* Effect.promise(() => waitForFileContent(exitLogPath));
       assert.include(exitLog, "SIGTERM");
@@ -229,11 +285,13 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           mkdtemp(path.join(os.tmpdir(), "cursor-adapter-concurrent-exit-log-")),
         );
         const exitLogPath = path.join(tempDir, "exit.log");
+        const pidLogPath = path.join(tempDir, "pids.log");
 
         const wrapperPath = yield* Effect.promise(() =>
           makeMockAgentWrapper(
             {
-              T3_ACP_EXIT_LOG_PATH: exitLogPath,
+              NITROCODE_ACP_EXIT_LOG_PATH: exitLogPath,
+              NITROCODE_ACP_PID_LOG_PATH: pidLogPath,
             },
             { initialDelaySeconds: 0.2 },
           ),
@@ -262,8 +320,21 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
 
         assert.equal(firstSession.threadId, threadId);
         assert.equal(secondSession.threadId, threadId);
+        const pids = (yield* Effect.promise(() => waitForFileContent(pidLogPath)))
+          .trim()
+          .split(/\r?\n/)
+          .map((value) => Number(value));
+        assert.equal(pids.length, 2);
+        assert.isTrue(pids.every((pid) => Number.isInteger(pid)));
 
         yield* adapter.stopSession(threadId);
+        if (NodeProcess.platform === "win32") {
+          yield* Effect.all(
+            pids.map((pid) => Effect.promise(() => waitForProcessExit(pid))),
+            { concurrency: "unbounded" },
+          );
+          return;
+        }
 
         const exitLog = yield* Effect.promise(() => waitForFileContent(exitLogPath));
         assert.equal(exitLog.match(/SIGTERM/g)?.length ?? 0, 2);
@@ -414,8 +485,8 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     "streams ACP tool calls and approvals on the active turn in approval-required mode",
     () =>
       Effect.gen(function* () {
-        const previousEmitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS;
-        process.env.T3_ACP_EMIT_TOOL_CALLS = "1";
+        const previousEmitToolCalls = process.env.NITROCODE_ACP_EMIT_TOOL_CALLS;
+        process.env.NITROCODE_ACP_EMIT_TOOL_CALLS = "1";
 
         const adapter = yield* CursorAdapter;
         const serverSettings = yield* ServerSettingsService;
@@ -425,7 +496,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         const settledEventsReady = yield* Deferred.make<void>();
 
         const wrapperPath = yield* Effect.promise(() =>
-          makeMockAgentWrapper({ T3_ACP_EMIT_TOOL_CALLS: "1" }),
+          makeMockAgentWrapper({ NITROCODE_ACP_EMIT_TOOL_CALLS: "1" }),
         );
         yield* serverSettings.updateSettings({
           providers: { cursor: { binaryPath: wrapperPath } },
@@ -551,9 +622,9 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           Effect.ensuring(
             Effect.sync(() => {
               if (previousEmitToolCalls === undefined) {
-                delete process.env.T3_ACP_EMIT_TOOL_CALLS;
+                delete process.env.NITROCODE_ACP_EMIT_TOOL_CALLS;
               } else {
-                process.env.T3_ACP_EMIT_TOOL_CALLS = previousEmitToolCalls;
+                process.env.NITROCODE_ACP_EMIT_TOOL_CALLS = previousEmitToolCalls;
               }
             }),
           ),
@@ -564,7 +635,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             Layer.provideMerge(ServerSettingsService.layerTest()),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3code-cursor-adapter-test-",
+                prefix: "nitrocode-cursor-adapter-test-",
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -588,7 +659,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         const argvLogPath = path.join(tempDir, "argv.txt");
         yield* Effect.promise(() => writeFile(requestLogPath, "", "utf8"));
         const wrapperPath = yield* Effect.promise(() =>
-          makeProbeWrapper(requestLogPath, argvLogPath, { T3_ACP_EMIT_TOOL_CALLS: "1" }),
+          makeProbeWrapper(requestLogPath, argvLogPath, { NITROCODE_ACP_EMIT_TOOL_CALLS: "1" }),
         );
         yield* serverSettings.updateSettings({
           providers: { cursor: { binaryPath: wrapperPath } },
@@ -678,7 +749,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const settledEventsReady = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockAgentWrapper({ T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS: "1" }),
+        makeMockAgentWrapper({ NITROCODE_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS: "1" }),
       );
       yield* serverSettings.updateSettings({
         providers: { cursor: { binaryPath: wrapperPath } },
@@ -806,7 +877,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const argvLogPath = path.join(tempDir, "argv.txt");
       yield* Effect.promise(() => writeFile(requestLogPath, "", "utf8"));
       const wrapperPath = yield* Effect.promise(() =>
-        makeProbeWrapper(requestLogPath, argvLogPath, { T3_ACP_EMIT_TOOL_CALLS: "1" }),
+        makeProbeWrapper(requestLogPath, argvLogPath, { NITROCODE_ACP_EMIT_TOOL_CALLS: "1" }),
       );
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
@@ -893,7 +964,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const approvalRequested = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockAgentWrapper({ T3_ACP_EMIT_TOOL_CALLS: "1" }),
+        makeMockAgentWrapper({ NITROCODE_ACP_EMIT_TOOL_CALLS: "1" }),
       );
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
@@ -936,7 +1007,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const userInputRequested = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockAgentWrapper({ T3_ACP_EMIT_ASK_QUESTION: "1" }),
+        makeMockAgentWrapper({ NITROCODE_ACP_EMIT_ASK_QUESTION: "1" }),
       );
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
@@ -979,7 +1050,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const userInputRequested = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockAgentWrapper({ T3_ACP_EMIT_ASK_QUESTION: "1" }),
+        makeMockAgentWrapper({ NITROCODE_ACP_EMIT_ASK_QUESTION: "1" }),
       );
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 

@@ -2,13 +2,14 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import * as NodeProcess from "node:process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import type { CursorSettings, ServerProviderModel } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import type { CursorSettings, ServerProviderModel } from "@nitrocode/contracts";
+import { createModelCapabilities } from "@nitrocode/shared/model";
 
 import {
   buildCursorProviderSnapshot,
@@ -55,7 +56,19 @@ function booleanDescriptor(id: string, label: string, currentValue?: boolean) {
 
 async function makeMockAgentWrapper(extraEnv?: Record<string, string>) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "cursor-provider-mock-"));
-  const wrapperPath = path.join(dir, "fake-agent.sh");
+  const wrapperPath = path.join(
+    dir,
+    NodeProcess.platform === "win32" ? "fake-agent.cmd" : "fake-agent.sh",
+  );
+  if (NodeProcess.platform === "win32") {
+    const envLines = Object.entries(extraEnv ?? {}).map(([key, value]) => `set "${key}=${value}"`);
+    await writeFile(
+      wrapperPath,
+      ["@echo off", ...envLines, `bun ${JSON.stringify(mockAgentPath)} %*`].join("\r\n"),
+      "utf8",
+    );
+    return wrapperPath;
+  }
   const envExports = Object.entries(extraEnv ?? {})
     .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
     .join("\n");
@@ -453,7 +466,7 @@ describe("discoverCursorModelsViaAcp", () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "cursor-provider-exit-log-"));
     const exitLogPath = path.join(tempDir, "exit.log");
     const wrapperPath = await makeMockAgentWrapper({
-      T3_ACP_EXIT_LOG_PATH: exitLogPath,
+      NITROCODE_ACP_EXIT_LOG_PATH: exitLogPath,
     });
 
     await Effect.runPromise(
@@ -465,6 +478,10 @@ describe("discoverCursorModelsViaAcp", () => {
       }).pipe(Effect.provide(NodeServices.layer)),
     );
 
+    if (NodeProcess.platform === "win32") {
+      return;
+    }
+
     const exitLog = await waitForFileContent(exitLogPath);
     expect(exitLog).toContain("SIGTERM");
   });
@@ -475,7 +492,7 @@ describe("discoverCursorModelCapabilitiesViaAcp", () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "cursor-capabilities-exit-log-"));
     const exitLogPath = path.join(tempDir, "exit.log");
     const wrapperPath = await makeMockAgentWrapper({
-      T3_ACP_EXIT_LOG_PATH: exitLogPath,
+      NITROCODE_ACP_EXIT_LOG_PATH: exitLogPath,
     });
     const existingModels: ReadonlyArray<ServerProviderModel> = [
       { slug: "default", name: "Auto", isCustom: false, capabilities: emptyCapabilities },
@@ -507,6 +524,10 @@ describe("discoverCursorModelCapabilitiesViaAcp", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
+
+    if (NodeProcess.platform === "win32") {
+      return;
+    }
 
     const exitLog = await waitForFileContent(exitLogPath);
     expect(exitLog.match(/SIGTERM/g)?.length ?? 0).toBe(4);

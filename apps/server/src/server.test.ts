@@ -10,6 +10,7 @@ import {
   GitCommandError,
   KeybindingRule,
   MessageId,
+  NITROMAP_WS_METHODS,
   OpenError,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
@@ -22,7 +23,7 @@ import {
   WS_METHODS,
   WsRpcGroup,
   EditorId,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import {
@@ -74,6 +75,7 @@ import {
   ProjectionSnapshotQuery,
   type ProjectionSnapshotQueryShape,
 } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { NitroMapProjectionLive } from "./nitromap/Layers/NitroMapProjection.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import {
   ProviderRegistry,
@@ -193,16 +195,6 @@ const makeDefaultOrchestrationThreadShell = (
   };
 };
 
-const workspaceAndProjectServicesLayer = Layer.mergeAll(
-  WorkspacePathsLive,
-  WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive)),
-  WorkspaceFileSystemLive.pipe(
-    Layer.provide(WorkspacePathsLive),
-    Layer.provide(WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive))),
-  ),
-  ProjectFaviconResolverLive,
-);
-
 const browserOtlpTracingLayer = Layer.mergeAll(
   FetchHttpClient.layer,
   OtlpSerialization.layerJson,
@@ -287,9 +279,9 @@ const makeBrowserOtlpPayload = (spanName: string) =>
         url: collector.url,
         exportInterval: "10 millis",
         resource: {
-          serviceName: "t3-web",
+          serviceName: "nitrocode-web",
           attributes: {
-            "service.runtime": "t3-web",
+            "service.runtime": "nitrocode-web",
             "service.mode": "browser",
             "service.version": "test",
           },
@@ -339,7 +331,9 @@ const buildAppUnderTest = (options?: {
 }) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    const tempBaseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-test-" });
+    const tempBaseDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "nitrocode-router-test-",
+    });
     const baseDir = options?.config?.baseDir ?? tempBaseDir;
     const devUrl = options?.config?.devUrl;
     const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
@@ -353,7 +347,7 @@ const buildAppUnderTest = (options?: {
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
       otlpExportIntervalMs: 10_000,
-      otlpServiceName: "t3-server",
+      otlpServiceName: "nitrocode-server",
       mode: "desktop",
       port: 0,
       host: "127.0.0.1",
@@ -501,6 +495,7 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.checkpointDiffQuery,
         }),
       ),
+      Layer.provideMerge(NitroMapProjectionLive),
     );
 
     const appLayer = servedRoutesLayer.pipe(
@@ -735,7 +730,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const staticDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-static-" });
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "nitrocode-router-static-",
+      });
       const indexPath = path.join(staticDir, "index.html");
       yield* fileSystem.writeFileString(indexPath, "<html>router-static-ok</html>");
 
@@ -769,7 +766,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const projectDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-router-project-favicon-",
+        prefix: "nitrocode-router-project-favicon-",
       });
       yield* fileSystem.writeFileString(
         path.join(projectDir, "favicon.svg"),
@@ -798,7 +795,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const projectDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-router-project-favicon-fallback-",
+        prefix: "nitrocode-router-project-favicon-fallback-",
       });
 
       yield* buildAppUnderTest({
@@ -823,7 +820,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
-      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
+      const url = yield* getHttpServerUrl("/.well-known/nitrocode/environment");
       const response = yield* Effect.promise(() => fetch(url));
       const body = (yield* Effect.promise(() =>
         response.json(),
@@ -858,7 +855,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "browser-session-cookie",
         "bearer-session-token",
       ]);
-      assert.isTrue(body.auth.sessionCookieName.startsWith("t3_session_"));
+      assert.isTrue(body.auth.sessionCookieName.startsWith("nitrocode_session_"));
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -1321,7 +1318,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const projectDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-router-project-favicon-query-token-",
+          prefix: "nitrocode-router-project-favicon-query-token-",
         });
 
         yield* buildAppUnderTest();
@@ -1478,7 +1475,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               attributes: [
                 {
                   key: "service.name",
-                  value: { stringValue: "t3-web" },
+                  value: { stringValue: "nitrocode-web" },
                 },
               ],
             },
@@ -1619,7 +1616,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             "rpc.method": "server.getSettings",
           },
           resourceAttributes: {
-            "service.name": "t3-web",
+            "service.name": "nitrocode-web",
           },
           scope: {
             name: "effect",
@@ -1749,7 +1746,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(record.links, []);
         assert.equal(record.scope.name, scopeSpan.scope.name);
         assert.deepEqual(record.scope.attributes, {});
-        assert.equal(record.resourceAttributes["service.name"], "t3-web");
+        assert.equal(record.resourceAttributes["service.name"], "nitrocode-web");
         assert.equal(record.status?.code, String(span.status.code));
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -1810,7 +1807,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-auth-required-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-ws-auth-required-",
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, "needle-file.ts"),
         "export const needle = 1;",
@@ -1895,7 +1894,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.keybindings, []);
         assert.deepEqual(first.config.issues, []);
         assert.deepEqual(first.config.providers, providers);
-        assert.equal(first.config.observability.logsDirectoryPath.endsWith("/logs"), true);
+        assert.equal(
+          first.config.observability.logsDirectoryPath.replaceAll("\\", "/").endsWith("/logs"),
+          true,
+        );
         assert.equal(first.config.observability.localTracingEnabled, true);
         assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
         assert.equal(first.config.observability.otlpTracesEnabled, true);
@@ -1908,6 +1910,36 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         type: "keybindingsUpdated",
         payload: { issues: [] },
       });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc NitroMap snapshot and subscription methods", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const snapshot = yield* client[NITROMAP_WS_METHODS.getProjectSnapshot]({
+              environmentId: EnvironmentId.make("environment-local"),
+              projectId: ProjectId.make("project-1"),
+            });
+            const events = yield* client[NITROMAP_WS_METHODS.subscribeProject]({
+              environmentId: EnvironmentId.make("environment-local"),
+              projectId: ProjectId.make("project-1"),
+              lastSequence: 1,
+              lastProjectVersion: snapshot.version,
+            }).pipe(Stream.take(1), Stream.runCollect);
+            return { snapshot, events: Array.from(events) };
+          }),
+        ),
+      );
+
+      assert.equal(result.snapshot.projectId, "project-1");
+      assert.equal(result.snapshot.mapMaintenance.cartographerStatus, "not-run");
+      assert.equal(result.events[0]?.type, "nitromap.stale");
+      assert.equal(result.events[0]?.projectVersion, result.snapshot.version);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2018,7 +2050,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-search-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-ws-project-search-",
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, "needle-file.ts"),
         "export const needle = 1;",
@@ -2048,7 +2082,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const workspaceDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "t3-ws-project-search-gitignored-",
+        prefix: "nitrocode-ws-project-search-gitignored-",
       });
       yield* fs.writeFileString(path.join(workspaceDir, ".gitignore"), ".venv/\n");
       yield* fs.makeDirectory(path.join(workspaceDir, ".venv", "lib"), { recursive: true });
@@ -2103,7 +2137,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const result = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.projectsSearchEntries]({
-            cwd: "/definitely/not/a/real/workspace/path",
+            cwd: "C:/definitely/not/a/real/workspace/path",
             query: "needle",
             limit: 10,
           }),
@@ -2112,10 +2146,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assertTrue(result._tag === "Failure");
       assertTrue(result.failure._tag === "ProjectSearchEntriesError");
-      assertInclude(
-        result.failure.message,
-        "Workspace root does not exist: /definitely/not/a/real/workspace/path",
-      );
+      assertInclude(result.failure.message, "Workspace root does not exist:");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2123,7 +2154,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-write-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-ws-project-write-",
+      });
 
       yield* buildAppUnderTest();
 
@@ -2148,7 +2181,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const parentDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-create-" });
+      const parentDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-ws-project-create-",
+      });
       const missingWorkspaceRoot = path.join(parentDir, "nested", "new-project");
 
       yield* buildAppUnderTest();
@@ -2181,7 +2216,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("routes websocket rpc projects.writeFile errors", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-write-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "nitrocode-ws-project-write-",
+      });
 
       yield* buildAppUnderTest();
 
@@ -2986,16 +3023,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("enriches replayed project events with repository identity metadata", () =>
     Effect.gen(function* () {
       const repositoryIdentity = {
-        canonicalKey: "github.com/t3tools/t3code",
+        canonicalKey: "github.com/nitrocode/nitrocode",
         locator: {
           source: "git-remote" as const,
           remoteName: "origin",
-          remoteUrl: "git@github.com:T3Tools/t3code.git",
+          remoteUrl: "git@github.com:NitroCode/nitrocode.git",
         },
-        displayName: "T3Tools/t3code",
+        displayName: "NitroCode/nitrocode",
         provider: "github",
-        owner: "T3Tools",
-        name: "t3code",
+        owner: "NitroCode",
+        name: "nitrocode",
       };
 
       yield* buildAppUnderTest({
@@ -3477,7 +3514,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             isRepo: true,
             hasOriginRemote: true,
             isDefaultBranch: false,
-            branch: "t3code/bootstrap-branch",
+            branch: "nitrocode/bootstrap-branch",
             hasWorkingTreeChanges: false,
             workingTree: {
               files: [],
@@ -3493,7 +3530,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
           Effect.succeed({
             worktree: {
-              branch: "t3code/bootstrap-branch",
+              branch: "nitrocode/bootstrap-branch",
               path: "/tmp/bootstrap-worktree",
             },
           }),
@@ -3562,7 +3599,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 prepareWorktree: {
                   projectCwd: "/tmp/project",
                   baseBranch: "main",
-                  branch: "t3code/bootstrap-branch",
+                  branch: "nitrocode/bootstrap-branch",
                 },
                 runSetupScript: true,
               },
@@ -3585,7 +3622,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           branch: "main",
-          newBranch: "t3code/bootstrap-branch",
+          newBranch: "nitrocode/bootstrap-branch",
           path: null,
         });
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
@@ -3618,7 +3655,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "nitrocode/bootstrap-branch",
             path: "/tmp/bootstrap-worktree",
           },
         }),
@@ -3678,7 +3715,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "nitrocode/bootstrap-branch",
               },
               runSetupScript: true,
             },
@@ -3711,7 +3748,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "nitrocode/bootstrap-branch",
             path: "/tmp/bootstrap-worktree",
           },
         }),
@@ -3794,7 +3831,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "nitrocode/bootstrap-branch",
               },
               runSetupScript: true,
             },
@@ -3877,7 +3914,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "nitrocode/bootstrap-branch",
               },
               runSetupScript: false,
             },

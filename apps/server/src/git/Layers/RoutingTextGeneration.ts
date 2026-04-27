@@ -22,19 +22,19 @@ import { OpenCodeTextGenerationLive } from "./OpenCodeTextGeneration.ts";
 // ---------------------------------------------------------------------------
 
 class CodexTextGen extends Context.Service<CodexTextGen, TextGenerationShape>()(
-  "t3/git/Layers/RoutingTextGeneration/CodexTextGen",
+  "nitrocode/git/Layers/RoutingTextGeneration/CodexTextGen",
 ) {}
 
 class ClaudeTextGen extends Context.Service<ClaudeTextGen, TextGenerationShape>()(
-  "t3/git/Layers/RoutingTextGeneration/ClaudeTextGen",
+  "nitrocode/git/Layers/RoutingTextGeneration/ClaudeTextGen",
 ) {}
 
 class CursorTextGen extends Context.Service<CursorTextGen, TextGenerationShape>()(
-  "t3/git/Layers/RoutingTextGeneration/CursorTextGen",
+  "nitrocode/git/Layers/RoutingTextGeneration/CursorTextGen",
 ) {}
 
 class OpenCodeTextGen extends Context.Service<OpenCodeTextGen, TextGenerationShape>()(
-  "t3/git/Layers/RoutingTextGeneration/OpenCodeTextGen",
+  "nitrocode/git/Layers/RoutingTextGeneration/OpenCodeTextGen",
 ) {}
 
 // ---------------------------------------------------------------------------

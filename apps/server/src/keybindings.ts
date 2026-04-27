@@ -19,7 +19,7 @@ import {
   ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
   type ServerConfigIssue,
-} from "@t3tools/contracts";
+} from "@nitrocode/contracts";
 import type { Mutable } from "effect/Types";
 import {
   Array,
@@ -47,7 +47,7 @@ import {
 import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "./config.ts";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { fromLenientJson } from "@nitrocode/shared/schemaJson";
 
 type WhenToken =
   | { type: "identifier"; value: string }
@@ -531,7 +531,7 @@ export interface KeybindingsShape {
  * Keybindings - Service tag for keybinding configuration operations.
  */
 export class Keybindings extends Context.Service<Keybindings, KeybindingsShape>()(
-  "t3/keybindings",
+  "nitrocode/keybindings",
 ) {}
 
 const makeKeybindings = Effect.gen(function* () {

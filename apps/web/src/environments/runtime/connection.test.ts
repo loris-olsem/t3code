@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@nitrocode/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { createEnvironmentConnection } from "./connection";
@@ -244,6 +244,41 @@ describe("createEnvironmentConnection", () => {
       environmentId,
     );
 
+    await connection.dispose();
+  });
+
+  it("notifies when the shell stream resubscribes", async () => {
+    const environmentId = EnvironmentId.make("env-1");
+    const { client, emitShellSnapshot } = createTestClient();
+    const handleShellResubscribe = vi.fn();
+
+    const connection = createEnvironmentConnection({
+      kind: "saved",
+      knownEnvironment: {
+        id: "env-1",
+        label: "Remote env",
+        source: "manual",
+        target: {
+          httpBaseUrl: "http://example.test",
+          wsBaseUrl: "ws://example.test",
+        },
+        environmentId,
+      },
+      client,
+      applyShellEvent: vi.fn(),
+      syncShellSnapshot: vi.fn(),
+      applyTerminalEvent: vi.fn(),
+      handleShellResubscribe,
+    });
+
+    await connection.ensureBootstrapped();
+    const reconnectPromise = connection.reconnect();
+    await Promise.resolve();
+
+    expect(handleShellResubscribe).toHaveBeenCalledWith(environmentId);
+
+    emitShellSnapshot(2);
+    await reconnectPromise;
     await connection.dispose();
   });
 });

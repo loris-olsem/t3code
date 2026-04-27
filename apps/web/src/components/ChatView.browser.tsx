@@ -16,9 +16,12 @@ import {
   WS_METHODS,
   OrchestrationSessionStatus,
   DEFAULT_SERVER_SETTINGS,
-} from "@t3tools/contracts";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime";
-import { createModelCapabilities, createModelSelection } from "@t3tools/shared/model";
+  NITROMAP_WS_METHODS,
+  NitroMapSnapshot,
+} from "@nitrocode/contracts";
+import { scopedThreadKey, scopeThreadRef } from "@nitrocode/client-runtime";
+import { createModelCapabilities, createModelSelection } from "@nitrocode/shared/model";
+import { Schema } from "effect";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { HttpResponse, http, ws } from "msw";
 import { setupWorker } from "msw/browser";
@@ -38,6 +41,7 @@ import {
   useSavedEnvironmentRegistryStore,
   useSavedEnvironmentRuntimeStore,
 } from "../environments/runtime";
+import { notifyEnvironmentConnectionRecovered } from "../environments/runtime/service";
 import {
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
   removeInlineTerminalContextPlaceholder,
@@ -45,17 +49,20 @@ import {
 } from "../lib/terminalContext";
 import { isMacPlatform } from "../lib/utils";
 import { __resetLocalApiForTests } from "../localApi";
+import { toNitroMapSnapshot } from "../nitromap/contractAdapter";
+import { buildMockNitroProjectMap, buildMockNitroRouteParams } from "../nitromap/mockData";
+import { useNitroWorkEpisodeStore } from "../nitromap/workEpisodeStore";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { getServerConfig } from "../rpc/serverState";
 import { getRouter } from "../router";
 import { deriveLogicalProjectKeyFromSettings } from "../logicalProject";
-import { selectBootstrapCompleteForActiveEnvironment, useStore } from "../store";
+import { selectBootstrapCompleteForActiveEnvironment, selectThreadByRef, useStore } from "../store";
 import { useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import { createAuthenticatedSessionHandlers } from "../../test/authHttpHandlers";
 import { BrowserWsRpcHarness, type NormalizedWsRpcRequestBody } from "../../test/wsRpcHarness";
 
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS } from "@nitrocode/contracts/settings";
 
 vi.mock("../lib/gitStatusState", () => ({
   useGitStatus: () => ({ data: null, error: null, cause: null, isPending: false }),
@@ -159,10 +166,10 @@ function createBaseServerConfig(): ServerConfig {
       policy: "loopback-browser",
       bootstrapMethods: ["one-time-token"],
       sessionMethods: ["browser-session-cookie", "bearer-session-token"],
-      sessionCookieName: "t3_session",
+      sessionCookieName: "nitrocode_session",
     },
     cwd: "/repo/project",
-    keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
+    keybindingsConfigPath: "/repo/project/.nitrocode-keybindings.json",
     keybindings: [],
     issues: [],
     providers: [
@@ -181,7 +188,7 @@ function createBaseServerConfig(): ServerConfig {
     ],
     availableEditors: [],
     observability: {
-      logsDirectoryPath: "/repo/project/.t3/logs",
+      logsDirectoryPath: "/repo/project/.nitrocode/logs",
       localTracingEnabled: true,
       otlpTracesEnabled: false,
       otlpMetricsEnabled: false,
@@ -216,7 +223,41 @@ function createMockEnvironmentApi(input: {
       subscribeThread: (() => () =>
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
+    nitromap: {
+      getProjectSnapshot: async (params) => makeBrowserNitroMapSnapshot(params),
+      subscribeProject: (params, listener) => {
+        void (async () => {
+          const snapshot = makeBrowserNitroMapSnapshot(params);
+          listener({
+            type: "nitromap.snapshot",
+            environmentId: params.environmentId,
+            projectId: params.projectId,
+            sequence: 1,
+            projectVersion: snapshot.version,
+            emittedAt: NOW_ISO,
+            snapshot,
+          });
+        })();
+        return () => undefined;
+      },
+    },
   };
+}
+
+function makeBrowserNitroMapSnapshot(params: {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+}) {
+  return Schema.decodeUnknownSync(NitroMapSnapshot)(
+    toNitroMapSnapshot(
+      buildMockNitroProjectMap(
+        buildMockNitroRouteParams({
+          environmentId: params.environmentId,
+          projectId: params.projectId,
+        }),
+      ),
+    ),
+  );
 }
 
 function createUserMessage(options: {
@@ -970,6 +1011,15 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
       truncated: false,
     };
   }
+  if (tag === NITROMAP_WS_METHODS.getProjectSnapshot) {
+    return makeBrowserNitroMapSnapshot({
+      environmentId:
+        typeof body.environmentId === "string"
+          ? (body.environmentId as EnvironmentId)
+          : LOCAL_ENVIRONMENT_ID,
+      projectId: typeof body.projectId === "string" ? (body.projectId as ProjectId) : PROJECT_ID,
+    });
+  }
   if (tag === WS_METHODS.shellOpenInEditor) {
     return null;
   }
@@ -1281,6 +1331,13 @@ async function waitForSendButton(): Promise<HTMLButtonElement> {
   );
 }
 
+async function waitForNitroSubmitButton(): Promise<HTMLButtonElement> {
+  return waitForElement(
+    () => document.querySelector<HTMLButtonElement>('button[aria-label="Start Nitro episode"]'),
+    "Unable to find Nitro submit button.",
+  );
+}
+
 function findComposerProviderModelPicker(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>('[data-chat-provider-model-picker="true"]');
 }
@@ -1571,6 +1628,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
     await rpcHarness.reset({
       resolveUnary: resolveWsRpc,
       getInitialStreamValues: (request) => {
+        const customResult = customWsRpcResolver?.(request);
+        if (customResult !== undefined) {
+          return Array.isArray(customResult) ? customResult : [customResult];
+        }
         if (request._tag === WS_METHODS.subscribeServerLifecycle) {
           return [
             {
@@ -1612,6 +1673,26 @@ describe("ChatView timeline estimator parity (full app)", () => {
               ]
             : [];
         }
+        if (request._tag === NITROMAP_WS_METHODS.subscribeProject) {
+          const environmentId =
+            typeof request.environmentId === "string"
+              ? (request.environmentId as EnvironmentId)
+              : LOCAL_ENVIRONMENT_ID;
+          const projectId =
+            typeof request.projectId === "string" ? (request.projectId as ProjectId) : PROJECT_ID;
+          const snapshot = makeBrowserNitroMapSnapshot({ environmentId, projectId });
+          return [
+            {
+              type: "nitromap.snapshot",
+              environmentId,
+              projectId,
+              sequence: 1,
+              projectVersion: snapshot.version,
+              emittedAt: NOW_ISO,
+              snapshot,
+            },
+          ];
+        }
         return [];
       },
     });
@@ -1652,11 +1733,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
       terminalEventEntriesByKey: {},
       nextTerminalEventId: 1,
     });
+    useNitroWorkEpisodeStore.getState().clearEpisodesForTests();
   });
 
   afterEach(() => {
     customWsRpcResolver = null;
     document.body.innerHTML = "";
+    useNitroWorkEpisodeStore.getState().clearEpisodesForTests();
   });
   it("re-expands the bootstrap project using its logical key", async () => {
     useUiStateStore.setState({
@@ -1802,10 +1885,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
             cwd: "/repo/project",
             worktreePath: null,
             env: {
-              T3CODE_PROJECT_ROOT: "/repo/project",
+              NITROCODE_PROJECT_ROOT: "/repo/project",
             },
           });
-          expect(openRequest?.env?.T3CODE_WORKTREE_PATH).toBeUndefined();
+          expect(openRequest?.env?.NITROCODE_WORKTREE_PATH).toBeUndefined();
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -2019,7 +2102,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
   });
 
   it("falls back to the first installed editor when the stored favorite is unavailable", async () => {
-    localStorage.setItem("t3code:last-editor", JSON.stringify("vscodium"));
+    localStorage.setItem("nitrocode:last-editor", JSON.stringify("vscodium"));
     setDraftThreadWithoutWorktree();
 
     const mounted = await mountChatView({
@@ -2119,7 +2202,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
             threadId: THREAD_ID,
             cwd: "/repo/project",
             env: {
-              T3CODE_PROJECT_ROOT: "/repo/project",
+              NITROCODE_PROJECT_ROOT: "/repo/project",
             },
           });
         },
@@ -2198,8 +2281,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
             threadId: THREAD_ID,
             cwd: "/repo/worktrees/feature-draft",
             env: {
-              T3CODE_PROJECT_ROOT: "/repo/project",
-              T3CODE_WORKTREE_PATH: "/repo/worktrees/feature-draft",
+              NITROCODE_PROJECT_ROOT: "/repo/project",
+              NITROCODE_WORKTREE_PATH: "/repo/worktrees/feature-draft",
             },
           });
         },
@@ -2248,7 +2331,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
             pullRequest: {
               number: 1359,
               title: "Add thread archiving and settings navigation",
-              url: "https://github.com/pingdotgg/t3code/pull/1359",
+              url: "https://github.com/pingdotgg/nitrocode/pull/1359",
               baseBranch: "main",
               headBranch: "archive-settings-overhaul",
               state: "open",
@@ -2260,7 +2343,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
             pullRequest: {
               number: 1359,
               title: "Add thread archiving and settings navigation",
-              url: "https://github.com/pingdotgg/t3code/pull/1359",
+              url: "https://github.com/pingdotgg/nitrocode/pull/1359",
               baseBranch: "main",
               headBranch: "archive-settings-overhaul",
               state: "open",
@@ -2413,7 +2496,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
               prepareWorktree: {
                 projectCwd: "/repo/project",
                 baseBranch: "main",
-                branch: expect.stringMatching(/^t3code\/[0-9a-f]{8}$/),
+                branch: expect.stringMatching(/^nitrocode\/[0-9a-f]{8}$/),
               },
               runSetupScript: true,
             },
@@ -2517,7 +2600,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
               prepareWorktree: {
                 projectCwd: "/repo/project",
                 baseBranch: "main",
-                branch: expect.stringMatching(/^t3code\/[0-9a-f]{8}$/),
+                branch: expect.stringMatching(/^nitrocode\/[0-9a-f]{8}$/),
               },
               runSetupScript: true,
             },
@@ -2787,6 +2870,279 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
     } finally {
       resolveDispatch({ sequence: fixture.snapshot.snapshotSequence + 1 });
+      await mounted.cleanup();
+    }
+  });
+
+  it("renders Nitro submit as an explicit non-Enter episode action", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-nitro-submit" as MessageId,
+        targetText: "nitro submit target",
+      }),
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Iterate first");
+      await waitForLayout();
+
+      const nitroButton = await waitForNitroSubmitButton();
+      const sendButton = await waitForSendButton();
+      const leftActions = document.querySelector<HTMLElement>(
+        '[data-chat-composer-actions="left"]',
+      );
+      const rightActions = document.querySelector<HTMLElement>(
+        '[data-chat-composer-actions="right"]',
+      );
+
+      expect(leftActions?.contains(nitroButton)).toBe(true);
+      expect(rightActions?.contains(nitroButton)).toBe(false);
+      expect(rightActions?.contains(sendButton)).toBe(true);
+      expect(nitroButton.type).toBe("button");
+      expect(sendButton.type).toBe("submit");
+      expect(nitroButton.disabled).toBe(false);
+      expect(sendButton.disabled).toBe(false);
+      expect(nitroButton.className).toContain("h-12");
+      expect(nitroButton.className).toContain("w-12");
+
+      const icons = Array.from(nitroButton.querySelectorAll("img"));
+      expect(icons).toHaveLength(2);
+      expect(nitroButton.className).toContain("group/nitro");
+      expect(icons.some((icon) => icon.className.includes("group-hover/nitro:opacity-0"))).toBe(
+        true,
+      );
+      expect(icons.some((icon) => icon.className.includes("group-hover/nitro:opacity-100"))).toBe(
+        true,
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps regular submit as a normal turn without creating a Nitro episode", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-regular-submit" as MessageId,
+        targetText: "regular submit target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Iterate before Nitro");
+      await waitForLayout();
+
+      const sendButton = await waitForSendButton();
+      sendButton.click();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.turn.start",
+            ),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(useNitroWorkEpisodeStore.getState().episodesByProjectKey).toEqual({});
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps Enter submit as a normal turn without creating a Nitro episode", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-enter-submit" as MessageId,
+        targetText: "enter submit target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Enter before Nitro");
+      await waitForLayout();
+
+      const composerEditor = await waitForComposerEditor();
+      composerEditor.focus();
+      composerEditor.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.turn.start",
+            ),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(useNitroWorkEpisodeStore.getState().episodesByProjectKey).toEqual({});
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("creates a Nitro episode only from the Nitro button", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-nitro-click" as MessageId,
+        targetText: "nitro click target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Start Nitro work");
+      await waitForLayout();
+
+      const nitroButton = await waitForNitroSubmitButton();
+      nitroButton.click();
+
+      await vi.waitFor(
+        () => {
+          const episodes =
+            useNitroWorkEpisodeStore.getState().episodesByProjectKey[
+              `${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`
+            ];
+          expect(episodes).toHaveLength(1);
+          expect(episodes?.[0]).toMatchObject({
+            conversationThreadId: THREAD_ID,
+            latestUserMessage: "Start Nitro work",
+            status: "running",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("disables Nitro but keeps regular send enabled when Cartographer has not run", async () => {
+    const unavailableSnapshot = {
+      ...makeBrowserNitroMapSnapshot({
+        environmentId: LOCAL_ENVIRONMENT_ID,
+        projectId: PROJECT_ID,
+      }),
+      mapMaintenance: {
+        cartographerStatus: "not-run" as const,
+        lastCheckedAt: null,
+        actions: [],
+      },
+    };
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-nitro-unavailable" as MessageId,
+        targetText: "nitro unavailable target",
+      }),
+      resolveRpc: (body) =>
+        body._tag === NITROMAP_WS_METHODS.subscribeProject
+          ? [
+              {
+                type: "nitromap.snapshot",
+                environmentId: unavailableSnapshot.environmentId,
+                projectId: unavailableSnapshot.projectId,
+                sequence: 1,
+                projectVersion: unavailableSnapshot.version,
+                emittedAt: NOW_ISO,
+                snapshot: unavailableSnapshot,
+              },
+              {
+                type: "nitromap.stale",
+                environmentId: unavailableSnapshot.environmentId,
+                projectId: unavailableSnapshot.projectId,
+                sequence: 1,
+                projectVersion: unavailableSnapshot.version,
+                emittedAt: NOW_ISO,
+                reason: "No updates after unavailable snapshot.",
+              },
+            ]
+          : undefined,
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Iterate first");
+      await waitForLayout();
+
+      const nitroButton = await waitForNitroSubmitButton();
+      const sendButton = await waitForSendButton();
+
+      await vi.waitFor(() => {
+        expect(nitroButton.disabled).toBe(true);
+      });
+      expect(sendButton.disabled).toBe(false);
+      expect(nitroButton.title).toBe("Run the Cartographer before starting a Nitro episode.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps regular send enabled when NitroMap availability fails", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-nitro-error" as MessageId,
+        targetText: "nitro error target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === NITROMAP_WS_METHODS.subscribeProject) {
+          throw new Error("projection offline");
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "Iterate first");
+      await waitForLayout();
+
+      const nitroButton = await waitForNitroSubmitButton();
+      const sendButton = await waitForSendButton();
+
+      await vi.waitFor(() => {
+        expect(nitroButton.disabled).toBe(true);
+        expect(nitroButton.title).toContain("NitroMap availability check failed");
+      });
+      expect(sendButton.disabled).toBe(false);
+    } finally {
       await mounted.cleanup();
     }
   });
@@ -3546,7 +3902,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
   it("shows the confirm archive action after clicking the archive button", async () => {
     localStorage.setItem(
-      "t3code:client-settings:v1",
+      "nitrocode:client-settings:v1",
       JSON.stringify({
         ...DEFAULT_CLIENT_SETTINGS,
         confirmThreadArchive: true,
@@ -3575,7 +3931,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await expect.element(confirmButton).toBeInTheDocument();
       await expect.element(confirmButton).toBeVisible();
     } finally {
-      localStorage.removeItem("t3code:client-settings:v1");
+      localStorage.removeItem("nitrocode:client-settings:v1");
       await mounted.cleanup();
     }
   });
@@ -3698,7 +4054,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           thread.id === THREAD_ID
             ? Object.assign({}, thread, {
                 branch: "feature/existing",
-                worktreePath: "/repo/.t3/worktrees/existing",
+                worktreePath: "/repo/.nitrocode/worktrees/existing",
               })
             : thread,
         ),
@@ -5368,6 +5724,337 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("submits pending user input while a Nitro episode is waiting", async () => {
+    useNitroWorkEpisodeStore.getState().startEpisode({
+      episodeId: "nitro-episode-pending-input",
+      roundId: "nitro-round-pending-input",
+      environmentId: LOCAL_ENVIRONMENT_ID,
+      projectId: PROJECT_ID,
+      conversationThreadId: THREAD_ID,
+      startedFromMessageId: "msg-user-pending-input-target" as MessageId,
+      title: "Pending input episode",
+      prompt: "question thread",
+      transcriptRoute: `/${LOCAL_ENVIRONMENT_ID}/${THREAD_ID}`,
+      createdAt: NOW_ISO,
+    });
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotWithPendingUserInput(),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      const firstOption = await waitForButtonContainingText("Tight");
+      firstOption.click();
+
+      const finalOption = await waitForButtonContainingText("Conservative");
+      finalOption.click();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.user-input.respond",
+            ),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(document.body.textContent).not.toContain(
+        "Abort or finish the running Nitro episode before sending.",
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("does not retry Nitro round completion appends after a dispatch failure", async () => {
+    const completedAt = isoAt(30);
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-target-nitro-complete-fail" as MessageId,
+      targetText: "nitro complete fail",
+    });
+    const nextSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: snapshot.threads.map((thread) =>
+        thread.id === THREAD_ID
+          ? Object.assign({}, thread, {
+              latestTurn: {
+                turnId: "turn-nitro-complete-fail" as TurnId,
+                state: "completed",
+                requestedAt: NOW_ISO,
+                startedAt: isoAt(1),
+                completedAt,
+                assistantMessageId: "msg-assistant-nitro-complete-fail" as MessageId,
+              },
+            })
+          : thread,
+      ),
+    };
+    useNitroWorkEpisodeStore.getState().startEpisode({
+      episodeId: "nitro-episode-complete-fail",
+      roundId: "nitro-round-complete-fail",
+      environmentId: LOCAL_ENVIRONMENT_ID,
+      projectId: PROJECT_ID,
+      conversationThreadId: THREAD_ID,
+      startedFromMessageId: "msg-user-target-nitro-complete-fail" as MessageId,
+      title: "Nitro completion failure",
+      prompt: "nitro complete fail",
+      transcriptRoute: `/${LOCAL_ENVIRONMENT_ID}/${THREAD_ID}`,
+      createdAt: NOW_ISO,
+    });
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: nextSnapshot,
+      resolveRpc: (body) => {
+        if (
+          body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+          body.type === "thread.nitro-round.complete"
+        ) {
+          throw new Error("append failed");
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.nitro-round.complete",
+            ),
+          ).toHaveLength(1);
+          expect(selectThreadByRef(useStore.getState(), THREAD_REF)?.error).toBe(
+            "Failed to append Nitro result message.",
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      await waitForLayout();
+      expect(
+        wsRequests.filter(
+          (request) =>
+            request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+            request.type === "thread.nitro-round.complete",
+        ),
+      ).toHaveLength(1);
+      expect(
+        useNitroWorkEpisodeStore.getState().episodesByProjectKey[
+          `${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`
+        ]?.[0],
+      ).toMatchObject({
+        status: "running",
+        rounds: [expect.objectContaining({ resultMessageId: null, status: "running" })],
+      });
+      const completionRequest = wsRequests.find(
+        (request) =>
+          request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+          request.type === "thread.nitro-round.complete",
+      ) as { commandId?: string; messageId?: string } | undefined;
+      expect(completionRequest?.commandId).toBe(
+        "nitro-round-complete:environment-local:project-1:nitro-episode-complete-fail:nitro-round-complete-fail",
+      );
+      expect(completionRequest?.messageId).toBe(
+        "nitro-round-result:environment-local:project-1:nitro-episode-complete-fail:nitro-round-complete-fail",
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("retries Nitro round completion after the environment reconnects", async () => {
+    const completedAt = isoAt(30);
+    let completionAttempts = 0;
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-target-nitro-complete-retry" as MessageId,
+      targetText: "nitro complete retry",
+    });
+    const nextSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: snapshot.threads.map((thread) =>
+        thread.id === THREAD_ID
+          ? Object.assign({}, thread, {
+              latestTurn: {
+                turnId: "turn-nitro-complete-retry" as TurnId,
+                state: "completed",
+                requestedAt: NOW_ISO,
+                startedAt: isoAt(1),
+                completedAt,
+                assistantMessageId: "msg-assistant-nitro-complete-retry" as MessageId,
+              },
+            })
+          : thread,
+      ),
+    };
+    useNitroWorkEpisodeStore.getState().startEpisode({
+      episodeId: "nitro-episode-complete-retry",
+      roundId: "nitro-round-complete-retry",
+      environmentId: LOCAL_ENVIRONMENT_ID,
+      projectId: PROJECT_ID,
+      conversationThreadId: THREAD_ID,
+      startedFromMessageId: "msg-user-target-nitro-complete-retry" as MessageId,
+      title: "Nitro completion retry",
+      prompt: "nitro complete retry",
+      transcriptRoute: `/${LOCAL_ENVIRONMENT_ID}/${THREAD_ID}`,
+      createdAt: NOW_ISO,
+    });
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: nextSnapshot,
+      resolveRpc: (body) => {
+        if (
+          body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+          body.type === "thread.nitro-round.complete"
+        ) {
+          completionAttempts += 1;
+          if (completionAttempts === 1) {
+            throw new Error("append failed once");
+          }
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.nitro-round.complete",
+            ),
+          ).toHaveLength(1);
+          expect(selectThreadByRef(useStore.getState(), THREAD_REF)?.error).toBe(
+            "Failed to append Nitro result message.",
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      notifyEnvironmentConnectionRecovered(LOCAL_ENVIRONMENT_ID);
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.nitro-round.complete",
+            ),
+          ).toHaveLength(2);
+          expect(
+            useNitroWorkEpisodeStore.getState().episodesByProjectKey[
+              `${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`
+            ]?.[0]?.status,
+          ).toBe("completed");
+          expect(selectThreadByRef(useStore.getState(), THREAD_REF)?.error).toBeNull();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const completionRequests = wsRequests.filter(
+        (request) =>
+          request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+          request.type === "thread.nitro-round.complete",
+      ) as Array<{ commandId?: string; messageId?: string }>;
+      expect(completionRequests[1]?.commandId).toBe(completionRequests[0]?.commandId);
+      expect(completionRequests[1]?.messageId).toBe(completionRequests[0]?.messageId);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("reconciles Nitro round completion while the chat route is unmounted", async () => {
+    const completedAt = isoAt(30);
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-target-nitro-complete-map" as MessageId,
+      targetText: "nitro complete from map",
+    });
+    const nextSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: snapshot.threads.map((thread) =>
+        thread.id === THREAD_ID
+          ? Object.assign({}, thread, {
+              latestTurn: {
+                turnId: "turn-nitro-complete-map" as TurnId,
+                state: "completed",
+                requestedAt: NOW_ISO,
+                startedAt: isoAt(1),
+                completedAt,
+                assistantMessageId: "msg-assistant-nitro-complete-map" as MessageId,
+              },
+            })
+          : thread,
+      ),
+    };
+    useNitroWorkEpisodeStore.getState().startEpisode({
+      episodeId: "nitro-episode-complete-map",
+      roundId: "nitro-round-complete-map",
+      environmentId: LOCAL_ENVIRONMENT_ID,
+      projectId: PROJECT_ID,
+      conversationThreadId: THREAD_ID,
+      startedFromMessageId: "msg-user-target-nitro-complete-map" as MessageId,
+      title: "Nitro completion from map",
+      prompt: "nitro complete from map",
+      transcriptRoute: `/${LOCAL_ENVIRONMENT_ID}/${THREAD_ID}`,
+      createdAt: NOW_ISO,
+    });
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: nextSnapshot,
+      initialPath: `/projects/${LOCAL_ENVIRONMENT_ID}/${PROJECT_ID}/map`,
+      resolveRpc: (body) => {
+        if (
+          body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+          body.type === "thread.nitro-round.complete"
+        ) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.some(
+              (request) =>
+                request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+                request.type === "thread.nitro-round.complete",
+            ),
+          ).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+      expect(
+        useNitroWorkEpisodeStore.getState().episodesByProjectKey[
+          `${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`
+        ]?.[0]?.status,
+      ).toBe("completed");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("keeps plan follow-up footer actions fused and aligned after a real resize", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
@@ -5437,7 +6124,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       snapshot: createSnapshotWithPlanFollowUpPrompt({
         modelSelection: { provider: "codex", model: "gpt-5.3-codex-spark" },
         planMarkdown:
-          "# Imaginary Long-Range Plan: T3 Code Adaptive Orchestration and Safe-Delay Execution Initiative",
+          "# Imaginary Long-Range Plan: NitroCode Adaptive Orchestration and Safe-Delay Execution Initiative",
       }),
     });
 
@@ -5467,7 +6154,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       snapshot: createSnapshotWithPlanFollowUpPrompt({
         modelSelection: { provider: "codex", model: "gpt-5.3-codex-spark" },
         planMarkdown:
-          "# Imaginary Long-Range Plan: T3 Code Adaptive Orchestration and Safe-Delay Execution Initiative",
+          "# Imaginary Long-Range Plan: NitroCode Adaptive Orchestration and Safe-Delay Execution Initiative",
       }),
     });
 

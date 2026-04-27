@@ -1,11 +1,27 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(__dirname, "..");
-const electronBin = resolve(desktopDir, "node_modules/.bin/electron");
+const electronBinDir = resolve(desktopDir, "node_modules/.bin");
+const electronBinCandidates =
+  process.platform === "win32"
+    ? [
+        resolve(desktopDir, "node_modules/electron/dist/electron.exe"),
+        resolve(electronBinDir, "electron.exe"),
+        resolve(electronBinDir, "electron.bunx"),
+        resolve(electronBinDir, "electron.cmd"),
+        resolve(electronBinDir, "electron"),
+      ]
+    : [resolve(electronBinDir, "electron")];
+const electronBin = electronBinCandidates.find((candidate) => existsSync(candidate));
 const mainJs = resolve(desktopDir, "dist-electron/main.cjs");
+
+if (!electronBin) {
+  throw new Error(`Could not find Electron binary in ${electronBinDir}`);
+}
 
 console.log("\nLaunching Electron smoke test...");
 
